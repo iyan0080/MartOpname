@@ -7,7 +7,7 @@ export default defineConfig(() => {
   const isGitHubActions = process.env.GITHUB_ACTIONS === 'true';
 
   return {
-    base: isGitHubActions ? '/OPNAME-MART/' : '/',
+    base: isGitHubActions ? '/MartOpname/' : '/',
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
