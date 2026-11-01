@@ -1,0 +1,6 @@
+{
+  "name": "MartOpname - Sistem Stok Opname & Audit Inventaris Mart",
+  "description": "Aplikasi stok opname barang mart multi-user dengan scan barcode kamera & hardware scanner, sinkronisasi real-time, kalkulasi modal investasi, serta import/export XLSX.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

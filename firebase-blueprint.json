@@ -1,0 +1,70 @@
+{
+  "entities": {
+    "InventoryItem": {
+      "title": "InventoryItem",
+      "description": "Barang inventaris stok opname mart",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "ID unik dokumen barang" },
+        "sku": { "type": "string", "description": "Stock Keeping Unit toko" },
+        "namaBarang": { "type": "string", "description": "Nama lengkap produk" },
+        "barcode": { "type": "string", "description": "Kode batang barcode EAN/UPC" },
+        "kategori": { "type": "string", "description": "Kategori produk mart" },
+        "quantity": { "type": "number", "description": "Jumlah fisik hasil audit opname" },
+        "quantitySystem": { "type": "number", "description": "Jumlah stok sistem toko" },
+        "hargaModal": { "type": "number", "description": "Harga modal pokok barang dalam Rupiah" },
+        "keterangan": { "type": "string", "description": "Catatan lokasi rak / kondisi" },
+        "lastUpdatedBy": { "type": "string", "description": "Nama petugas yang terakhir memperbarui" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Waktu pembaruan ISO 8601" }
+      },
+      "required": ["sku", "namaBarang", "quantity", "hargaModal"]
+    },
+    "MartUser": {
+      "title": "MartUser",
+      "description": "Petugas stok opname toko mart",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "ID unik petugas" },
+        "name": { "type": "string", "description": "Nama petugas" },
+        "role": { "type": "string", "description": "Peran atau jabatan" },
+        "color": { "type": "string", "description": "Warna avatar" },
+        "active": { "type": "boolean", "description": "Status aktif" }
+      },
+      "required": ["name", "role"]
+    },
+    "ScanAuditLog": {
+      "title": "ScanAuditLog",
+      "description": "Riwayat audit pemindaian dan perubahan kuantitas",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "ID log" },
+        "itemId": { "type": "string", "description": "ID barang terkait" },
+        "sku": { "type": "string", "description": "SKU barang" },
+        "namaBarang": { "type": "string", "description": "Nama barang" },
+        "barcode": { "type": "string", "description": "Barcode barang" },
+        "user": { "type": "string", "description": "Nama petugas yang melakukan aksi" },
+        "action": { "type": "string", "description": "Jenis aksi audit" },
+        "previousQty": { "type": "number", "description": "Kuantitas sebelum aksi" },
+        "newQty": { "type": "number", "description": "Kuantitas setelah aksi" },
+        "delta": { "type": "number", "description": "Selisih perubahan kuantitas" },
+        "notes": { "type": "string", "description": "Catatan perhitungan" },
+        "timestamp": { "type": "string", "format": "date-time", "description": "Waktu log ISO" }
+      },
+      "required": ["sku", "namaBarang", "user", "action", "newQty", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/items/{itemId}": {
+      "schema": { "$ref": "#/entities/InventoryItem" },
+      "description": "Koleksi data master dan stok fisik barang mart"
+    },
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/MartUser" },
+      "description": "Daftar profil petugas stok opname toko"
+    },
+    "/logs/{logId}": {
+      "schema": { "$ref": "#/entities/ScanAuditLog" },
+      "description": "Log jejak audit pemindaian dan penyesuaian kuantitas secara real-time"
+    }
+  }
+}
