@@ -4,10 +4,11 @@ import path from 'path';
 import { defineConfig } from 'vite';
 
 export default defineConfig(() => {
-  const isGitHubActions = process.env.GITHUB_ACTIONS === 'true';
+  // Default root '/' for Firebase Hosting, Cloudflare Pages, etc.
+  const isGitHubPages = process.env.DEPLOY_TARGET === 'github-pages';
 
   return {
-    base: isGitHubActions ? '/MartOpname/' : '/',
+    base: isGitHubPages ? '/MartOpname/' : '/',
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
