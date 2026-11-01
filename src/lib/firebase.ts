@@ -104,6 +104,22 @@ export async function fetchItemsFromFirestore(): Promise<InventoryItem[]> {
   }
 }
 
+// Fetch all logs from Firestore
+export async function fetchLogsFromFirestore(): Promise<ScanAuditLog[]> {
+  const path = 'logs';
+  try {
+    const q = query(collection(db, path), orderBy('timestamp', 'desc'), limit(500));
+    const snapshot = await getDocs(q);
+    const logs: ScanAuditLog[] = [];
+    snapshot.forEach((docSnap) => {
+      logs.push(docSnap.data() as ScanAuditLog);
+    });
+    return logs;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.GET, path);
+  }
+}
+
 // Save or update an item in Firestore
 export async function saveItemToFirestore(item: InventoryItem): Promise<void> {
   const path = `items/${item.id}`;
