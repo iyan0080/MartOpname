@@ -51,6 +51,41 @@
         "timestamp": { "type": "string", "format": "date-time", "description": "Waktu log ISO" }
       },
       "required": ["sku", "namaBarang", "user", "action", "newQty", "timestamp"]
+    },
+    "OpnameSession": {
+      "title": "OpnameSession",
+      "description": "Pengaturan sesi dan tanggal pelaksanaan stok opname mart",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "opnameDate": { "type": "string" },
+        "title": { "type": "string" },
+        "picIyan": { "type": "string" },
+        "picHendri": { "type": "string" },
+        "notes": { "type": "string" },
+        "status": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "updatedBy": { "type": "string" }
+      },
+      "required": ["opnameDate"]
+    },
+    "FinanceRecord": {
+      "title": "FinanceRecord",
+      "description": "Pencatatan kas, hutang mitra, saldo santri, dan piutang marhalah khusus IYAN dan HENDRI",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "uangTunai": { "type": "number" },
+        "saldoBank": { "type": "number" },
+        "modalAwal": { "type": "number" },
+        "catatanKas": { "type": "string" },
+        "piutangList": { "type": "array" },
+        "hutangMitraList": { "type": "array" },
+        "saldoSantriList": { "type": "array" },
+        "lastUpdatedBy": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["uangTunai", "saldoBank", "modalAwal"]
     }
   },
   "firestore": {
@@ -65,6 +100,14 @@
     "/logs/{logId}": {
       "schema": { "$ref": "#/entities/ScanAuditLog" },
       "description": "Log jejak audit pemindaian dan penyesuaian kuantitas secara real-time"
+    },
+    "/settings/{settingId}": {
+      "schema": { "$ref": "#/entities/OpnameSession" },
+      "description": "Konfigurasi sesi dan tanggal opname mart"
+    },
+    "/finance/{recordId}": {
+      "schema": { "$ref": "#/entities/FinanceRecord" },
+      "description": "Pencatatan kas, hutang, dan piutang khusus staf IYAN dan HENDRI"
     }
   }
 }

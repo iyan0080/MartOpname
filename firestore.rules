@@ -60,6 +60,18 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // Opname session and app settings
+    match /settings/{settingId} {
+      allow read: if true;
+      allow write: if isValidId(settingId);
+    }
+
+    // Finance records (Kas, Hutang Mitra, Saldo Santri, Piutang Marhalah)
+    match /finance/{financeId} {
+      allow read: if true;
+      allow write: if isValidId(financeId);
+    }
+
     // Connection verification document
     match /test/{docId} {
       allow read: if true;

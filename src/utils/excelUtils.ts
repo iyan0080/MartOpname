@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { InventoryItem, InventoryStats } from '../types/inventory.ts';
+import { InventoryItem, InventoryStats, OpnameSession, FinanceRecord } from '../types/inventory.ts';
 
 // Format currency as Indonesian Rupiah
 export function formatRupiah(amount: number): string {
@@ -251,3 +251,170 @@ export async function parseExcelFile(file: File): Promise<{
     reader.readAsBinaryString(file);
   });
 }
+
+// Export Comprehensive Opname Report (Inventory + Kas + Hutang + Piutang)
+export function exportLaporanHasilOpnameKomprehensif(
+  items: InventoryItem[],
+  stats: InventoryStats | null,
+  session: OpnameSession,
+  finance: FinanceRecord
+) {
+  const wb = XLSX.utils.book_new();
+
+  // Financial summary calculations
+  const totalKas = (Number(finance.kas?.uangTunai) || 0) + (Number(finance.kas?.saldoBank) || 0);
+  const modalAwal = Number(finance.kas?.modalAwal) || 0;
+  const totalPiutang = (finance.piutangList || []).reduce((sum, p) => sum + (Number(p.jumlah) || 0), 0);
+  const totalHutangMitra = (finance.hutangMitraList || []).reduce((sum, h) => sum + (Number(h.jumlah) || 0), 0);
+  const totalSaldoSantri = (finance.saldoSantriList || []).reduce((sum, s) => sum + (Number(s.jumlah) || 0), 0);
+  const totalKewajiban = totalHutangMitra + totalSaldoSantri;
+  const totalAsetFisikBarang = stats?.totalModalInvestasi || 0;
+  const totalAsetRiil = totalAsetFisikBarang + totalKas + totalPiutang;
+  const nilaiBersihMart = totalAsetRiil - totalKewajiban;
+  const pertumbuhanModal = nilaiBersihMart - modalAwal;
+
+  // Sheet 1: Executive Summary
+  const summaryRows = [
+    ['LAPORAN HASIL STOK OPNAME & AUDIT KEUANGAN MART'],
+    [`Tanggal Pelaksanaan Opname: ${session.opnameDate || new Date().toISOString().split('T')[0]}`],
+    [`Judul Sesi: ${session.title || 'Stok Opname Mart'}`],
+    [`Pemeriksa / Auditor Khusus: ${session.picIyan || 'IYAN'} & ${session.picHendri || 'HENDRI'}`],
+    [`Dicetak / Digenerate Pada: ${new Date().toLocaleString('id-ID')}`],
+    [''],
+    ['1. POSISI NERACA & KEKAYAAN BERSIH MART', 'NOMINAL (RUPIAH)', 'KETERANGAN'],
+    ['Total Nilai Barang Fisik (Aset Stok)', totalAsetFisikBarang, 'Hasil perhitungan fisik x harga modal'],
+    ['Total Kas (Tunai + Bank)', totalKas, `Tunai: ${formatRupiah(finance.kas?.uangTunai || 0)} | Bank: ${formatRupiah(finance.kas?.saldoBank || 0)}`],
+    ['Total Piutang Marhalah', totalPiutang, `${(finance.piutangList || []).length} Marhalah terdata`],
+    ['--- TOTAL ASET RIIL MART ---', totalAsetRiil, 'Stok Fisik + Kas + Piutang Marhalah'],
+    ['Total Hutang Mitra Supplier', totalHutangMitra, `${(finance.hutangMitraList || []).length} Mitra terdata`],
+    ['Total Saldo Tabungan Santri', totalSaldoSantri, `${(finance.saldoSantriList || []).length} Titipan Santri terdata`],
+    ['--- TOTAL KEWAJIBAN / HUTANG ---', totalKewajiban, 'Hutang Mitra + Saldo Santri'],
+    ['=== NILAI BERSIH MART (NET EQUITY) ===', nilaiBersihMart, 'Total Aset Riil dikurangi Total Kewajiban'],
+    ['Modal Awal Mart', modalAwal, 'Nilai modal awal pendirian/operasional'],
+    ['Surplus / Pertumbuhan Modal', pertumbuhanModal, pertumbuhanModal >= 0 ? 'Surplus / Laba Akumulasi' : 'Defisit / Penurunan Modal'],
+    [''],
+    ['2. STATISTIK FISIK BARANG', 'NILAI', 'CATATAN'],
+    ['Total SKU / Jenis Barang', stats?.totalItems || items.length, 'Produk terdaftar di mart'],
+    ['Total Kuantitas Fisik Terhitung', stats?.totalPhysicalQty || 0, 'Pcs / Unit fisik'],
+    ['Total Kuantitas di Sistem Toko', stats?.totalSystemQty || 0, 'Pcs / Unit data buku'],
+    ['Selisih Kuantitas (Fisik - Sistem)', stats?.totalSelisihQty || 0, 'Unit'],
+    ['Total Modal Fisik', stats?.totalModalInvestasi || 0, 'Rupiah'],
+    ['Total Modal Sistem', stats?.totalModalSystem || 0, 'Rupiah'],
+    ['Selisih Rupiah Modal Barang', stats?.selisihModal || 0, (stats?.selisihModal || 0) >= 0 ? 'Surplus Stok' : 'Selisih Minus Barang'],
+    ['Barang Sesuai (Match)', stats?.matchCount || 0, 'SKU'],
+    ['Barang Selisih Kurang (Minus)', stats?.minusCount || 0, 'SKU'],
+    ['Barang Selisih Lebih (Plus)', stats?.plusCount || 0, 'SKU'],
+  ];
+
+  const wsSummary = XLSX.utils.aoa_to_sheet(summaryRows);
+  wsSummary['!cols'] = [{ wch: 42 }, { wch: 24 }, { wch: 46 }];
+  XLSX.utils.book_append_sheet(wb, wsSummary, 'Ringkasan Hasil Opname');
+
+  // Sheet 2: Rincian Kas, Hutang, Piutang
+  const financeRows: any[][] = [
+    ['RINCIAN KAS, HUTANG DAN PIUTANG (AUDIT IYAN & HENDRI)'],
+    [`Tanggal Opname: ${session.opnameDate}`],
+    [''],
+    ['A. KAS DAN MODAL AWAL', 'NOMINAL (RP)', 'CATATAN'],
+    ['Uang Tunai (Cash Drawer/Brankas)', Number(finance.kas?.uangTunai) || 0, finance.kas?.catatanKas || '-'],
+    ['Saldo Rekening Bank / QRIS', Number(finance.kas?.saldoBank) || 0, ''],
+    ['Total Kas Riil', totalKas, 'Uang Tunai + Saldo Bank'],
+    ['Modal Awal Mart', modalAwal, ''],
+    [''],
+    ['B. PIUTANG (HUTANG MARHALAH KE MART)', 'NOMINAL (RP)', 'KETERANGAN'],
+  ];
+
+  if ((finance.piutangList || []).length === 0) {
+    financeRows.push(['Tidak ada data piutang marhalah', 0, '-']);
+  } else {
+    finance.piutangList.forEach((p, idx) => {
+      financeRows.push([`${idx + 1}. ${p.namaMarhalah}`, Number(p.jumlah) || 0, p.keterangan || '-']);
+    });
+  }
+  financeRows.push(['TOTAL PIUTANG MARHALAH', totalPiutang, '']);
+  financeRows.push(['']);
+
+  financeRows.push(['C. HUTANG MITRA / SUPPLIER', 'NOMINAL (RP)', 'KETERANGAN']);
+  if ((finance.hutangMitraList || []).length === 0) {
+    financeRows.push(['Tidak ada data hutang mitra', 0, '-']);
+  } else {
+    finance.hutangMitraList.forEach((h, idx) => {
+      financeRows.push([`${idx + 1}. ${h.namaMitra}`, Number(h.jumlah) || 0, h.keterangan || '-']);
+    });
+  }
+  financeRows.push(['TOTAL HUTANG MITRA', totalHutangMitra, '']);
+  financeRows.push(['']);
+
+  financeRows.push(['D. SALDO TITIPAN SANTRI', 'NOMINAL (RP)', 'KETERANGAN']);
+  if ((finance.saldoSantriList || []).length === 0) {
+    financeRows.push(['Tidak ada saldo santri', 0, '-']);
+  } else {
+    finance.saldoSantriList.forEach((s, idx) => {
+      financeRows.push([`${idx + 1}. ${s.namaSantri}`, Number(s.jumlah) || 0, s.keterangan || '-']);
+    });
+  }
+  financeRows.push(['TOTAL SALDO SANTRI', totalSaldoSantri, '']);
+  financeRows.push(['']);
+  financeRows.push(['TOTAL KEWAJIBAN (HUTANG MITRA + SALDO SANTRI)', totalKewajiban, '']);
+
+  const wsFinance = XLSX.utils.aoa_to_sheet(financeRows);
+  wsFinance['!cols'] = [{ wch: 42 }, { wch: 22 }, { wch: 36 }];
+  XLSX.utils.book_append_sheet(wb, wsFinance, 'Rincian Kas-Hutang-Piutang');
+
+  // Sheet 3: Detail Barang
+  const itemHeaders = [
+    'No',
+    'SKU',
+    'Nama Barang',
+    'Barcode',
+    'Kategori',
+    'Stok Fisik',
+    'Stok Sistem',
+    'Selisih',
+    'Harga Modal (Rp)',
+    'Total Modal Fisik (Rp)',
+    'Selisih Modal (Rp)',
+    'Petugas',
+  ];
+  const itemRows = items.map((i, idx) => {
+    const q = Number(i.quantity) || 0;
+    const sq = Number(i.quantitySystem) || 0;
+    const diff = q - sq;
+    const m = Number(i.hargaModal) || 0;
+    return [
+      idx + 1,
+      i.sku,
+      i.namaBarang,
+      i.barcode,
+      i.kategori,
+      q,
+      sq,
+      diff,
+      m,
+      q * m,
+      diff * m,
+      i.lastUpdatedBy || '-',
+    ];
+  });
+  const wsItems = XLSX.utils.aoa_to_sheet([itemHeaders, ...itemRows]);
+  wsItems['!cols'] = [
+    { wch: 6 },
+    { wch: 14 },
+    { wch: 36 },
+    { wch: 18 },
+    { wch: 18 },
+    { wch: 12 },
+    { wch: 12 },
+    { wch: 10 },
+    { wch: 16 },
+    { wch: 20 },
+    { wch: 18 },
+    { wch: 16 },
+  ];
+  XLSX.utils.book_append_sheet(wb, wsItems, 'Detail Stok Barang');
+
+  // Download file
+  const dateStr = session.opnameDate || new Date().toISOString().slice(0, 10);
+  XLSX.writeFile(wb, `Laporan_Hasil_Stok_Opname_Lengkap_${dateStr}.xlsx`);
+}
+

@@ -34,25 +34,45 @@ export const PasswordPromptModal: React.FC<PasswordPromptModalProps> = ({
     setError(null);
 
     try {
-      const res = await fetch('/api/auth/verify-iyan', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password }),
-      });
+      let isSuccess = false;
+      let token = '';
 
-      const data = await res.json();
+      // Try server endpoint first (for Node dev server)
+      try {
+        const res = await fetch('/api/auth/verify-iyan', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && data.token) {
+            isSuccess = true;
+            token = data.token;
+          }
+        }
+      } catch {
+        // Server not reachable (e.g. GitHub Pages static hosting where backend is Firebase Cloud)
+      }
+
+      // Direct verification fallback for GitHub Pages
+      if (!isSuccess && password === 'Kantin0011@') {
+        isSuccess = true;
+        token = 'iyan_auth_' + Date.now().toString(36) + Math.random().toString(36).substring(2);
+      }
+
       setIsVerifying(false);
 
-      if (res.ok && data.success && data.token) {
+      if (isSuccess) {
         setPassword('');
         setError(null);
-        onSuccess(data.token);
+        onSuccess(token);
       } else {
-        setError(data.error || 'Password salah. Akses ditolak.');
+        setError('Password salah. Akses ditolak.');
       }
     } catch {
       setIsVerifying(false);
-      setError('Gagal menghubungkan ke server verifikasi.');
+      setError('Gagal memverifikasi password.');
     }
   };
 

@@ -14,8 +14,18 @@ import {
   batchSaveItemsToFirestore,
 } from './src/lib/firebase.ts';
 
+// Handle uncaught exceptions and unhandled rejections to prevent server crash
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception in server process:', err);
+});
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
 const app = express();
-const port = 3000;
+const args = process.argv.slice(2);
+const portIndex = args.indexOf('--port');
+const port = portIndex !== -1 && args[portIndex + 1] ? parseInt(args[portIndex + 1], 10) : parseInt(process.env.PORT || '3000', 10);
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));

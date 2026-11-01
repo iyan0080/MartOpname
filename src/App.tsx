@@ -30,11 +30,34 @@ import {
   Camera,
   X,
   Cloud,
+  FileSpreadsheet,
+  Calendar,
+  Banknote,
+  FileText,
+  Scale,
 } from 'lucide-react';
 
-import { InventoryItem, MartUser, ScanAuditLog, InventoryStats } from './types/inventory.ts';
-import { testFirestoreConnection } from './lib/firebase.ts';
-import { INITIAL_USERS } from './data/seedData.ts';
+import { InventoryItem, MartUser, ScanAuditLog, InventoryStats, OpnameSession, FinanceRecord } from './types/inventory.ts';
+import {
+  testFirestoreConnection,
+  subscribeToFirestoreItems,
+  subscribeToFirestoreLogs,
+  subscribeToFirestoreUsers,
+  subscribeToOpnameSession,
+  saveOpnameSessionToFirestore,
+  DEFAULT_OPNAME_SESSION,
+  subscribeToFinanceRecord,
+  saveFinanceRecordToFirestore,
+  DEFAULT_FINANCE_RECORD,
+  saveItemToFirestore,
+  deleteItemFromFirestore,
+  saveLogToFirestore,
+  batchSaveItemsToFirestore,
+  replaceAllItemsInFirestore,
+  saveUserToFirestore,
+} from './lib/firebase.ts';
+import { INITIAL_ITEMS, INITIAL_USERS } from './data/seedData.ts';
+import { calculateInventoryStats } from './utils/statsUtils.ts';
 import { formatRupiah, exportInventoryToXLSX } from './utils/excelUtils.ts';
 import { playScanSuccessSound, playScanWarningSound } from './utils/soundEffects.ts';
 
@@ -46,6 +69,11 @@ import { QuickAdjustDialog } from './components/QuickAdjustDialog.tsx';
 import { LiveAuditDrawer } from './components/LiveAuditDrawer.tsx';
 import { QuantityCalculatorModal } from './components/QuantityCalculatorModal.tsx';
 import { PasswordPromptModal } from './components/PasswordPromptModal.tsx';
+import { OpnameDateModal } from './components/OpnameDateModal.tsx';
+import { FinanceManagerModal } from './components/FinanceManagerModal.tsx';
+import { LaporanHasilOpnameModal } from './components/LaporanHasilOpnameModal.tsx';
+import { MobileBottomDock } from './components/MobileBottomDock.tsx';
+import { MobileMenuSheet } from './components/MobileMenuSheet.tsx';
 import { useTheme } from './utils/useTheme.ts';
 import { ThemeToggle } from './components/ThemeToggle.tsx';
 
@@ -103,6 +131,20 @@ export default function App() {
   const [calcTargetItem, setCalcTargetItem] = useState<InventoryItem | null>(null);
   const [deleteConfirmItem, setDeleteConfirmItem] = useState<InventoryItem | null>(null);
   const [isResetConfirmModalOpen, setIsResetConfirmModalOpen] = useState(false);
+
+  // Opname Session state (Tanggal pelaksanaan opname & tim pemeriksa)
+  const [session, setSession] = useState<OpnameSession>(DEFAULT_OPNAME_SESSION);
+  const [isOpnameDateModalOpen, setIsOpnameDateModalOpen] = useState(false);
+
+  // Finance Record state (Kas, Hutang Mitra, Saldo Santri, Piutang Marhalah - Khusus IYAN & HENDRI)
+  const [finance, setFinance] = useState<FinanceRecord>(DEFAULT_FINANCE_RECORD);
+  const [isFinanceModalOpen, setIsFinanceModalOpen] = useState(false);
+
+  // Laporan Hasil Opname Modal
+  const [isLaporanHasilOpnameOpen, setIsLaporanHasilOpnameOpen] = useState(false);
+
+  // Mobile Bottom Sheet Menu State
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // Opsi Tampilan (Visibility preferences, persisted in localStorage)
   const [showStatsSummary, setShowStatsSummary] = useState<boolean>(() => {
@@ -183,19 +225,24 @@ export default function App() {
     setActiveUser('IYAN');
     localStorage.setItem('mart_active_user', 'IYAN');
     setIsPasswordPromptOpen(false);
-    showToast('Login IYAN berhasil. Otorisasi Export & Import diaktifkan.', 'success');
+    showToast('Login IYAN berhasil. Otorisasi Import/Export XLSX aktif.', 'success');
 
     if (passwordPromptPurpose === 'open_import_export') {
       setIsImportExportOpen(true);
     } else if (passwordPromptPurpose === 'export_rekap') {
       exportInventoryToXLSX(items, stats || undefined);
+      showToast('File Excel (.xlsx) data stok opname berhasil didownload!', 'success');
     }
   };
 
-  // Open Export/Import with IYAN authorization gate
-  const handleOpenUploadXlsx = (tab: 'import' | 'export' = 'import') => {
+  // Open Import/Export XLSX modal - Strictly for user IYAN with password verification
+  const handleOpenImportExport = (tab: 'import' | 'export' = 'import') => {
+    if (activeUser !== 'IYAN') {
+      showToast('Fitur Import/Export XLSX hanya dapat diakses oleh user IYAN.', 'alert');
+      return;
+    }
     setImportExportDefaultTab(tab);
-    if (activeUser === 'IYAN' && iyanToken) {
+    if (iyanToken) {
       setIsImportExportOpen(true);
     } else {
       setPasswordPromptPurpose('open_import_export');
@@ -203,92 +250,137 @@ export default function App() {
     }
   };
 
-  const handleOpenImportExport = () => {
-    handleOpenUploadXlsx('import');
-  };
-
-  // Fetch initial data
-  const fetchInventoryData = async () => {
-    try {
-      const res = await fetch('/api/inventory');
-      if (res.ok) {
-        const data = await res.json();
-        setItems(data.items || []);
-        if (data.users && data.users.length > 0) {
-          setUsers(data.users);
-        }
-        setLogs(data.logs || []);
-        setStats(data.stats || null);
-        if (data.activeUsersCount) {
-          setActiveUsersCount(data.activeUsersCount);
-        }
-      }
-    } catch (err) {
-      console.error('Failed to fetch inventory:', err);
-    } finally {
-      setIsLoading(false);
+  // Direct Export Data to XLSX Excel file (Only for user IYAN)
+  const handleOpenExportXlsx = () => {
+    if (activeUser !== 'IYAN') {
+      showToast('Fitur Export XLSX hanya dapat diakses oleh user IYAN.', 'alert');
+      return;
+    }
+    if (iyanToken) {
+      exportInventoryToXLSX(items, stats || undefined);
+      showToast('File Excel (.xlsx) data stok opname berhasil didownload!', 'success');
+    } else {
+      setPasswordPromptPurpose('export_rekap');
+      setIsPasswordPromptOpen(true);
     }
   };
 
-  // Initialize data and real-time SSE connection
+  // Initialize direct real-time Firebase Cloud Firestore connection
+  // Back end: Firebase Cloud Firestore | Front end: GitHub Pages
   useEffect(() => {
-    fetchInventoryData();
+    let isInitialSeeded = false;
+
     testFirestoreConnection().then((connected) => {
       setIsCloudConnected(connected);
     });
 
-    // Setup Server-Sent Events (SSE) for concurrent multi-user sync
-    const eventSource = new EventSource(`/api/events?user=${encodeURIComponent(activeUser)}`);
-
-    eventSource.onmessage = (event) => {
-      try {
-        const payload = JSON.parse(event.data);
-        if (payload.type === 'ITEM_UPDATED') {
-          const { item, log, stats: newStats, user: updateAuthor } = payload.data;
-          setItems((prev) => prev.map((i) => (i.id === item.id ? item : i)));
-          if (log) setLogs((prev) => [log, ...prev.slice(0, 49)]);
-          if (newStats) setStats(newStats);
-
-          if (updateAuthor !== activeUser) {
-            showToast(`${updateAuthor} memperbarui: ${item.namaBarang} (${item.quantity} pcs)`, 'info');
+    // Real-time listener for Items from Firebase Cloud Firestore
+    const unsubscribeItems = subscribeToFirestoreItems(
+      async (cloudItems) => {
+        if (cloudItems.length === 0 && !isInitialSeeded) {
+          isInitialSeeded = true;
+          try {
+            console.log('Seeding initial items to Firestore from client...');
+            await batchSaveItemsToFirestore(INITIAL_ITEMS);
+            setItems(INITIAL_ITEMS);
+            setStats(calculateInventoryStats(INITIAL_ITEMS));
+          } catch (seedErr) {
+            console.error('Initial seed error:', seedErr);
+            setItems(INITIAL_ITEMS);
+            setStats(calculateInventoryStats(INITIAL_ITEMS));
           }
-        } else if (payload.type === 'ITEM_ADDED') {
-          const { item, log, stats: newStats, user: updateAuthor } = payload.data;
-          setItems((prev) => [...prev, item]);
-          if (log) setLogs((prev) => [log, ...prev.slice(0, 49)]);
-          if (newStats) setStats(newStats);
-          if (updateAuthor !== activeUser) {
-            showToast(`${updateAuthor} menambahkan barang baru: ${item.namaBarang}`, 'info');
-          }
-        } else if (payload.type === 'ITEM_DELETED') {
-          const { itemId, log, stats: newStats, user: updateAuthor } = payload.data;
-          setItems((prev) => prev.filter((i) => i.id !== itemId));
-          if (log) setLogs((prev) => [log, ...prev.slice(0, 49)]);
-          if (newStats) setStats(newStats);
-          if (updateAuthor !== activeUser) {
-            showToast(`${updateAuthor} menghapus barang dari inventaris`, 'alert');
-          }
-        } else if (payload.type === 'USER_ADDED') {
-          if (payload.data.users) setUsers(payload.data.users);
-        } else if (payload.type === 'USER_STATUS') {
-          if (payload.data.activeCount) setActiveUsersCount(payload.data.activeCount);
-        } else if (payload.type === 'BATCH_IMPORTED' || payload.type === 'COUNTS_RESET') {
-          fetchInventoryData();
-          showToast('Data inventaris telah disinkronkan kembali dari server.', 'success');
+        } else {
+          setItems(cloudItems);
+          setStats(calculateInventoryStats(cloudItems));
         }
-      } catch (err) {
-        console.error('Error handling SSE payload:', err);
+        setIsLoading(false);
+        setIsCloudConnected(true);
+      },
+      (err) => {
+        console.warn('Firestore items subscription error:', err);
+        setIsLoading(false);
       }
-    };
+    );
 
-    eventSource.onerror = () => {
-      // Automatic browser reconnect handled by EventSource
-    };
+    // Real-time listener for Audit Logs from Firebase Cloud Firestore
+    const unsubscribeLogs = subscribeToFirestoreLogs((cloudLogs) => {
+      setLogs(cloudLogs);
+    });
+
+    // Real-time listener for Users from Firebase Cloud Firestore
+    const unsubscribeUsers = subscribeToFirestoreUsers((cloudUsers) => {
+      if (cloudUsers && cloudUsers.length > 0) {
+        setUsers(cloudUsers);
+      }
+    });
+
+    // Real-time listener for Opname Session (Tanggal opname & periode)
+    const unsubscribeSession = subscribeToOpnameSession((cloudSession) => {
+      setSession(cloudSession);
+    });
+
+    // Real-time listener for Finance Record (Kas, Hutang Mitra, Saldo Santri, Piutang Marhalah)
+    const unsubscribeFinance = subscribeToFinanceRecord((cloudFinance) => {
+      setFinance(cloudFinance);
+    });
+
+    // Optional SSE fallback (only for local Node dev server, safely handled if 404 on GitHub Pages)
+    let eventSource: EventSource | null = null;
+    try {
+      eventSource = new EventSource(`/api/events?user=${encodeURIComponent(activeUser)}`);
+      eventSource.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data);
+          if (payload.type === 'USER_STATUS' && payload.data.activeCount) {
+            setActiveUsersCount(payload.data.activeCount);
+          }
+        } catch {
+          // ignore
+        }
+      };
+      eventSource.onerror = () => {
+        if (eventSource) {
+          eventSource.close();
+          eventSource = null;
+        }
+      };
+    } catch {
+      // ignore
+    }
 
     return () => {
-      eventSource.close();
+      unsubscribeItems();
+      unsubscribeLogs();
+      unsubscribeUsers();
+      unsubscribeSession();
+      unsubscribeFinance();
+      if (eventSource) eventSource.close();
     };
   }, [activeUser]);
+
+  // Handler for saving Opname Session (Tanggal Opname)
+  const handleSaveOpnameSession = async (updated: OpnameSession) => {
+    try {
+      await saveOpnameSessionToFirestore(updated);
+      setSession(updated);
+      showToast(`Tanggal opname berhasil disimpan: ${updated.opnameDate}`, 'success');
+    } catch (err) {
+      console.error(err);
+      showToast('Gagal menyimpan tanggal opname ke Firebase Cloud', 'alert');
+    }
+  };
+
+  // Handler for saving Finance Record (Kas, Hutang, Piutang)
+  const handleSaveFinanceRecord = async (updated: FinanceRecord) => {
+    try {
+      await saveFinanceRecordToFirestore(updated);
+      setFinance(updated);
+      showToast('Catatan Kas, Hutang, dan Piutang berhasil disimpan ke Firebase Cloud!', 'success');
+    } catch (err) {
+      console.error(err);
+      showToast('Gagal menyimpan data keuangan ke Firebase Cloud', 'alert');
+    }
+  };
 
   // Hardware Barcode Scanner Gun Keypress Listener (USB / Bluetooth HID)
   // Physical barcode scanners type characters in quick bursts (<50ms) followed by 'Enter'
@@ -297,7 +389,6 @@ export default function App() {
     let lastKeyTime = Date.now();
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ignore if user is currently typing in an input or textarea
       const target = e.target as HTMLElement;
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT') {
         return;
@@ -307,7 +398,7 @@ export default function App() {
       const char = e.key;
 
       if (currentTime - lastKeyTime > 150) {
-        keyBuffer = ''; // Reset buffer if delay too long
+        keyBuffer = '';
       }
       lastKeyTime = currentTime;
 
@@ -328,36 +419,56 @@ export default function App() {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [activeUser, soundEnabled]);
+  }, [activeUser, soundEnabled, items]);
 
-  // Process hardware barcode scanner hit
+  // Process hardware barcode scanner hit directly against Firebase Cloud Firestore
   const handleHardwareScan = async (code: string) => {
-    try {
-      const res = await fetch('/api/scan', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          barcode: code,
-          sku: code,
-          quantityChange: 1,
-          mode: 'increment',
-          user: activeUser,
-        }),
-      });
+    const trimmed = code.trim();
+    if (!trimmed) return;
 
-      const data = await res.json();
-      if (res.ok && data.success) {
+    const item = items.find(
+      (i) => (i.barcode && i.barcode.toLowerCase() === trimmed.toLowerCase()) || i.sku.toLowerCase() === trimmed.toLowerCase()
+    );
+
+    if (item) {
+      const prevQty = item.quantity || 0;
+      const newQty = prevQty + 1;
+      const now = new Date().toISOString();
+      const updatedItem: InventoryItem = {
+        ...item,
+        quantity: newQty,
+        lastUpdatedBy: activeUser,
+        updatedAt: now,
+      };
+      const log: ScanAuditLog = {
+        id: `log-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+        itemId: item.id,
+        sku: item.sku,
+        namaBarang: item.namaBarang,
+        barcode: item.barcode,
+        user: activeUser,
+        action: 'SCAN_INCREMENT',
+        previousQty: prevQty,
+        newQty,
+        delta: 1,
+        notes: item.keterangan,
+        timestamp: now,
+      };
+
+      try {
+        await saveItemToFirestore(updatedItem);
+        await saveLogToFirestore(log);
         if (soundEnabled) playScanSuccessSound();
-        showToast(`[Hardware Scanner] +1 ${data.item.namaBarang} (Total: ${data.item.quantity} pcs)`, 'success');
-      } else {
-        if (soundEnabled) playScanWarningSound();
-        showToast(`[Hardware Scanner] Barcode "${code}" belum terdaftar!`, 'alert');
-        setPrefilledBarcode(code);
-        setEditingItem(null);
-        setIsItemFormOpen(true);
+        showToast(`[Hardware Scanner] +1 ${item.namaBarang} (Total: ${newQty} pcs)`, 'success');
+      } catch (err) {
+        console.error('Scan save error:', err);
       }
-    } catch (err) {
-      console.error('Scan error:', err);
+    } else {
+      if (soundEnabled) playScanWarningSound();
+      showToast(`[Hardware Scanner] Barcode "${trimmed}" belum terdaftar!`, 'alert');
+      setPrefilledBarcode(trimmed);
+      setEditingItem(null);
+      setIsItemFormOpen(true);
     }
   };
 
@@ -366,49 +477,54 @@ export default function App() {
     barcode: string,
     mode: 'calculator' | 'increment'
   ): Promise<{ success: boolean; item?: InventoryItem; notFound?: boolean }> => {
-    try {
-      const code = barcode.trim();
-      if (!code) return { success: false };
+    const code = barcode.trim();
+    if (!code) return { success: false };
 
-      if (mode === 'calculator') {
-        // Mode Kalkulator: Look up item without modifying quantity
-        const local = items.find(
-          (i) => i.barcode === code || i.sku.toLowerCase() === code.toLowerCase()
-        );
-        if (local) {
-          return { success: true, item: local };
-        }
+    const local = items.find(
+      (i) => (i.barcode && i.barcode.toLowerCase() === code.toLowerCase()) || i.sku.toLowerCase() === code.toLowerCase()
+    );
 
-        const res = await fetch(`/api/items/lookup?code=${encodeURIComponent(code)}`);
-        const data = await res.json();
-        if (res.ok && data.success && data.item) {
-          return { success: true, item: data.item };
-        }
-        return { success: false, notFound: true };
+    if (mode === 'calculator') {
+      if (local) {
+        return { success: true, item: local };
       }
+      return { success: false, notFound: true };
+    }
 
-      // Mode Satuan: Single increment +1
-      const res = await fetch('/api/scan', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          barcode: code,
-          sku: code,
-          quantityChange: 1,
-          mode: 'increment',
-          user: activeUser,
-        }),
-      });
-
-      const data = await res.json();
-      if (res.ok && data.success) {
-        showToast(`+1 ${data.item.namaBarang} (Total: ${data.item.quantity} pcs)`, 'success');
-        return { success: true, item: data.item };
-      } else {
-        return { success: false, notFound: true };
+    if (local) {
+      const prevQty = local.quantity || 0;
+      const newQty = prevQty + 1;
+      const now = new Date().toISOString();
+      const updatedItem: InventoryItem = {
+        ...local,
+        quantity: newQty,
+        lastUpdatedBy: activeUser,
+        updatedAt: now,
+      };
+      const log: ScanAuditLog = {
+        id: `log-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+        itemId: local.id,
+        sku: local.sku,
+        namaBarang: local.namaBarang,
+        barcode: local.barcode,
+        user: activeUser,
+        action: 'SCAN_INCREMENT',
+        previousQty: prevQty,
+        newQty,
+        delta: 1,
+        notes: local.keterangan,
+        timestamp: now,
+      };
+      try {
+        await saveItemToFirestore(updatedItem);
+        await saveLogToFirestore(log);
+        showToast(`+1 ${local.namaBarang} (Total: ${newQty} pcs)`, 'success');
+        return { success: true, item: updatedItem };
+      } catch {
+        return { success: false };
       }
-    } catch {
-      return { success: false };
+    } else {
+      return { success: false, notFound: true };
     }
   };
 
@@ -418,13 +534,11 @@ export default function App() {
     const query = searchQuery.trim();
     if (!query) return;
 
-    // Search exact match by barcode or SKU
     const found = items.find(
       (i) => i.barcode === query || i.sku.toLowerCase() === query.toLowerCase()
     );
 
     if (found) {
-      // Open the quantity calculator for this scanned/entered item!
       setCalcTargetItem(found);
       setIsGlobalCalcOpen(true);
       if (soundEnabled) playScanSuccessSound();
@@ -439,60 +553,127 @@ export default function App() {
     }
   };
 
-  // Quick adjust quantity via table buttons (+1 / -1)
+  // Quick adjust quantity via table buttons (+1 / -1) directly to Firebase Cloud
   const handleQuickDelta = async (item: InventoryItem, delta: number) => {
+    const prevQty = item.quantity || 0;
+    const newQty = Math.max(0, prevQty + delta);
+    const now = new Date().toISOString();
+    const updatedItem: InventoryItem = {
+      ...item,
+      quantity: newQty,
+      lastUpdatedBy: activeUser,
+      updatedAt: now,
+    };
+    const log: ScanAuditLog = {
+      id: `log-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      itemId: item.id,
+      sku: item.sku,
+      namaBarang: item.namaBarang,
+      barcode: item.barcode,
+      user: activeUser,
+      action: delta > 0 ? 'SCAN_INCREMENT' : 'SET_QUANTITY',
+      previousQty: prevQty,
+      newQty,
+      delta: newQty - prevQty,
+      notes: item.keterangan,
+      timestamp: now,
+    };
     try {
-      const res = await fetch('/api/scan', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          barcode: item.barcode,
-          sku: item.sku,
-          quantityChange: delta,
-          mode: 'increment',
-          user: activeUser,
-        }),
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        if (soundEnabled) playScanSuccessSound();
-      }
+      await saveItemToFirestore(updatedItem);
+      await saveLogToFirestore(log);
+      if (soundEnabled) playScanSuccessSound();
     } catch (err) {
       console.error('Quick delta error:', err);
     }
   };
 
-  // Save new or edited item
+  // Save new or edited item directly to Firebase Cloud
   const handleSaveItem = async (itemData: Partial<InventoryItem>): Promise<boolean> => {
     try {
       const isEdit = Boolean(itemData.id);
-      const url = isEdit ? `/api/items/${itemData.id}` : '/api/items';
-      const method = isEdit ? 'PUT' : 'POST';
+      const now = new Date().toISOString();
 
-      const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...itemData, user: activeUser }),
-      });
+      if (isEdit && itemData.id) {
+        const existing = items.find((i) => i.id === itemData.id);
+        const prevQty = existing?.quantity || 0;
+        const newQty = itemData.quantity !== undefined ? Number(itemData.quantity) : prevQty;
+        const updatedItem: InventoryItem = {
+          id: itemData.id,
+          sku: (itemData.sku || existing?.sku || '').trim().toUpperCase(),
+          namaBarang: (itemData.namaBarang || existing?.namaBarang || '').trim(),
+          barcode: (itemData.barcode !== undefined ? itemData.barcode : existing?.barcode || '').trim(),
+          kategori: itemData.kategori || existing?.kategori || 'Sembako',
+          quantity: newQty,
+          quantitySystem: itemData.quantitySystem !== undefined ? Number(itemData.quantitySystem) : (existing?.quantitySystem || 0),
+          hargaModal: itemData.hargaModal !== undefined ? Number(itemData.hargaModal) : (existing?.hargaModal || 0),
+          keterangan: itemData.keterangan !== undefined ? itemData.keterangan : (existing?.keterangan || ''),
+          lastUpdatedBy: activeUser,
+          updatedAt: now,
+        };
 
-      const data = await res.json();
-      if (res.ok && data.success) {
-        showToast(
-          isEdit ? `Barang ${itemData.namaBarang} diperbarui.` : `Barang baru ${itemData.namaBarang} ditambahkan.`,
-          'success'
-        );
+        const log: ScanAuditLog = {
+          id: `log-${Date.now()}`,
+          itemId: updatedItem.id,
+          sku: updatedItem.sku,
+          namaBarang: updatedItem.namaBarang,
+          barcode: updatedItem.barcode,
+          user: activeUser,
+          action: 'UPDATE_ITEM',
+          previousQty: prevQty,
+          newQty,
+          delta: newQty - prevQty,
+          notes: updatedItem.keterangan || 'Update detail barang',
+          timestamp: now,
+        };
+
+        await saveItemToFirestore(updatedItem);
+        await saveLogToFirestore(log);
+        showToast(`Barang ${updatedItem.namaBarang} berhasil diperbarui di Cloud.`, 'success');
         return true;
       } else {
-        showToast(data.error || 'Gagal menyimpan barang.', 'alert');
-        return false;
+        const cleanSku = (itemData.sku || `SKU-${Date.now().toString().slice(-4)}`).trim().toUpperCase();
+        const newItem: InventoryItem = {
+          id: `item-${Date.now()}`,
+          sku: cleanSku,
+          namaBarang: (itemData.namaBarang || 'Barang Baru').trim(),
+          barcode: (itemData.barcode || '').trim(),
+          kategori: itemData.kategori || 'Sembako',
+          quantity: Math.max(0, Number(itemData.quantity) || 0),
+          quantitySystem: Math.max(0, Number(itemData.quantitySystem) || 0),
+          hargaModal: Math.max(0, Number(itemData.hargaModal) || 0),
+          keterangan: itemData.keterangan || 'Barang Baru Ditambahkan',
+          lastUpdatedBy: activeUser,
+          updatedAt: now,
+        };
+
+        const log: ScanAuditLog = {
+          id: `log-${Date.now()}`,
+          itemId: newItem.id,
+          sku: newItem.sku,
+          namaBarang: newItem.namaBarang,
+          barcode: newItem.barcode,
+          user: activeUser,
+          action: 'ADD_ITEM',
+          previousQty: 0,
+          newQty: newItem.quantity,
+          delta: newItem.quantity,
+          notes: 'Penambahan barang baru',
+          timestamp: now,
+        };
+
+        await saveItemToFirestore(newItem);
+        await saveLogToFirestore(log);
+        showToast(`Barang baru ${newItem.namaBarang} berhasil ditambahkan ke Cloud.`, 'success');
+        return true;
       }
     } catch (err) {
       console.error('Error saving item:', err);
+      showToast('Gagal menyimpan barang ke Firebase Cloud.', 'alert');
       return false;
     }
   };
 
-  // Delete item with in-app confirmation
+  // Delete item with in-app confirmation directly in Firebase Cloud
   const handleDeleteItem = (item: InventoryItem) => {
     setDeleteConfirmItem(item);
   };
@@ -503,98 +684,192 @@ export default function App() {
     setDeleteConfirmItem(null);
 
     try {
-      const res = await fetch(`/api/items/${item.id}?user=${encodeURIComponent(activeUser)}`, {
-        method: 'DELETE',
-      });
-      if (res.ok) {
-        showToast(`Barang ${item.namaBarang} telah dihapus.`, 'alert');
-      }
+      await deleteItemFromFirestore(item.id);
+      const log: ScanAuditLog = {
+        id: `log-${Date.now()}`,
+        itemId: item.id,
+        sku: item.sku,
+        namaBarang: item.namaBarang,
+        barcode: item.barcode,
+        user: activeUser,
+        action: 'DELETE_ITEM',
+        previousQty: item.quantity,
+        newQty: 0,
+        delta: -item.quantity,
+        notes: `Barang dihapus oleh ${activeUser}`,
+        timestamp: new Date().toISOString(),
+      };
+      await saveLogToFirestore(log);
+      showToast(`Barang ${item.namaBarang} telah dihapus dari Cloud.`, 'alert');
     } catch (err) {
       console.error('Error deleting item:', err);
     }
   };
 
-  // Save Quick Adjust dialog
+  // Save Quick Adjust dialog directly to Firebase Cloud
   const handleSaveQuickAdjust = async (itemId: string, newQuantity: number, notes?: string): Promise<boolean> => {
     try {
       const target = items.find((i) => i.id === itemId);
       if (!target) return false;
 
-      const res = await fetch('/api/scan', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          barcode: target.barcode,
-          sku: target.sku,
-          quantityChange: newQuantity,
-          mode: 'set',
-          user: activeUser,
-          notes,
-        }),
-      });
+      const prevQty = target.quantity || 0;
+      const updatedItem: InventoryItem = {
+        ...target,
+        quantity: Math.max(0, newQuantity),
+        lastUpdatedBy: activeUser,
+        updatedAt: new Date().toISOString(),
+        keterangan: notes || target.keterangan,
+      };
 
-      const data = await res.json();
-      if (res.ok && data.success) {
-        if (soundEnabled) playScanSuccessSound();
-        showToast(`Stok fisik ${target.namaBarang} diset ke ${newQuantity} pcs.`, 'success');
-        return true;
-      }
-      return false;
+      const log: ScanAuditLog = {
+        id: `log-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+        itemId: target.id,
+        sku: target.sku,
+        namaBarang: target.namaBarang,
+        barcode: target.barcode,
+        user: activeUser,
+        action: 'SET_QUANTITY',
+        previousQty: prevQty,
+        newQty: Math.max(0, newQuantity),
+        delta: Math.max(0, newQuantity) - prevQty,
+        notes: notes || target.keterangan,
+        timestamp: updatedItem.updatedAt,
+      };
+
+      await saveItemToFirestore(updatedItem);
+      await saveLogToFirestore(log);
+      if (soundEnabled) playScanSuccessSound();
+      showToast(`Stok fisik ${target.namaBarang} diset ke ${newQuantity} pcs.`, 'success');
+      return true;
     } catch (err) {
       console.error('Error quick adjust:', err);
       return false;
     }
   };
 
-  // Add new user
+  // Add new user directly to Firebase Cloud
   const handleAddUser = async (name: string, role: string, color?: string): Promise<boolean> => {
     try {
-      const res = await fetch('/api/users', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, role, color }),
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        showToast(`Petugas baru "${name}" berhasil didaftarkan.`, 'success');
-        handleSelectActiveUser(name);
-        return true;
-      }
-      return false;
+      const cleanName = name.trim().toUpperCase();
+      const palette = ['#0284c7', '#059669', '#7c3aed', '#ea580c', '#db2777', '#ca8a04', '#0d9488', '#4f46e5'];
+      const assignedColor = color || palette[users.length % palette.length];
+      const newUser: MartUser = {
+        id: `usr-${Date.now()}`,
+        name: cleanName,
+        role: role.trim() || 'Petugas Opname',
+        color: assignedColor,
+        createdAt: new Date().toISOString(),
+      };
+      await saveUserToFirestore(newUser);
+      showToast(`Petugas baru "${cleanName}" berhasil didaftarkan di Cloud.`, 'success');
+      handleSelectActiveUser(cleanName);
+      return true;
     } catch {
       return false;
     }
   };
 
-  // Batch import XLSX (Strictly restricted to user IYAN with valid authentication)
+  // Batch import XLSX directly to Firebase Cloud (Strictly restricted to user IYAN with valid authentication)
   const handleBatchImport = async (importItems: Partial<InventoryItem>[], mode: 'merge' | 'replace'): Promise<boolean> => {
-    try {
-      const res = await fetch('/api/import', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-iyan-token': iyanToken || '',
-        },
-        body: JSON.stringify({ items: importItems, mode, user: 'IYAN', token: iyanToken }),
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        showToast(
-          `Import selesai: ${data.importedCount} barang baru, ${data.updatedCount} barang diperbarui.`,
-          'success'
-        );
-        fetchInventoryData();
-        return true;
-      }
-      showToast(data.error || 'Gagal memproses import. Akses khusus untuk user IYAN.', 'alert');
+    if (activeUser !== 'IYAN') {
+      showToast('Akses Ditolak: Hanya user IYAN yang berhak melakukan import data.', 'alert');
       return false;
-    } catch {
-      showToast('Terjadi kesalahan saat import data.', 'alert');
+    }
+
+    try {
+      let importedCount = 0;
+      let updatedCount = 0;
+      const now = new Date().toISOString();
+
+      if (mode === 'replace') {
+        const fullItems: InventoryItem[] = importItems.map((raw, idx) => ({
+          id: raw.id || `item-imp-${Date.now()}-${idx}`,
+          sku: String(raw.sku || `SKU-${idx + 1}`).trim().toUpperCase(),
+          namaBarang: String(raw.namaBarang || 'Barang Tanpa Nama').trim(),
+          barcode: String(raw.barcode || '').trim(),
+          kategori: String(raw.kategori || 'Sembako').trim(),
+          quantity: Math.max(0, Number(raw.quantity) || 0),
+          quantitySystem: Math.max(0, Number(raw.quantitySystem !== undefined ? raw.quantitySystem : raw.quantity) || 0),
+          hargaModal: Math.max(0, Number(raw.hargaModal) || 0),
+          keterangan: String(raw.keterangan || 'Import XLSX').trim(),
+          lastUpdatedBy: 'IYAN',
+          updatedAt: now,
+        }));
+        await replaceAllItemsInFirestore(fullItems);
+        importedCount = fullItems.length;
+      } else {
+        const updatedList: InventoryItem[] = [...items];
+        importItems.forEach((raw, idx) => {
+          const rawSku = String(raw.sku || '').trim().toUpperCase();
+          const rawBarcode = String(raw.barcode || '').trim();
+
+          const existingIndex = updatedList.findIndex(
+            (i) => (rawSku && i.sku.toUpperCase() === rawSku) || (rawBarcode && i.barcode === rawBarcode)
+          );
+
+          if (existingIndex >= 0) {
+            const existing = updatedList[existingIndex];
+            updatedList[existingIndex] = {
+              ...existing,
+              namaBarang: raw.namaBarang ? String(raw.namaBarang).trim() : existing.namaBarang,
+              kategori: raw.kategori ? String(raw.kategori).trim() : existing.kategori,
+              quantity: raw.quantity !== undefined ? Math.max(0, Number(raw.quantity)) : existing.quantity,
+              quantitySystem: raw.quantitySystem !== undefined ? Math.max(0, Number(raw.quantitySystem)) : existing.quantitySystem,
+              hargaModal: raw.hargaModal !== undefined ? Math.max(0, Number(raw.hargaModal)) : existing.hargaModal,
+              keterangan: raw.keterangan !== undefined ? String(raw.keterangan) : existing.keterangan,
+              lastUpdatedBy: 'IYAN',
+              updatedAt: now,
+            };
+            updatedCount++;
+          } else if (rawSku || raw.namaBarang) {
+            updatedList.push({
+              id: `item-imp-${Date.now()}-${idx}`,
+              sku: rawSku || `SKU-${Date.now().toString().slice(-4)}-${idx}`,
+              namaBarang: String(raw.namaBarang || 'Barang Baru').trim(),
+              barcode: rawBarcode || `BAR-${Date.now().toString().slice(-6)}-${idx}`,
+              kategori: String(raw.kategori || 'Sembako').trim(),
+              quantity: Math.max(0, Number(raw.quantity) || 0),
+              quantitySystem: Math.max(0, Number(raw.quantitySystem !== undefined ? raw.quantitySystem : raw.quantity) || 0),
+              hargaModal: Math.max(0, Number(raw.hargaModal) || 0),
+              keterangan: String(raw.keterangan || 'Import XLSX').trim(),
+              lastUpdatedBy: 'IYAN',
+              updatedAt: now,
+            });
+            importedCount++;
+          }
+        });
+        await batchSaveItemsToFirestore(updatedList);
+      }
+
+      const log: ScanAuditLog = {
+        id: `log-${Date.now()}`,
+        itemId: 'batch-import',
+        sku: 'BATCH',
+        namaBarang: `Import XLSX (${importedCount} baru, ${updatedCount} diperbarui)`,
+        barcode: '-',
+        user: 'IYAN',
+        action: 'IMPORT_XLSX',
+        previousQty: 0,
+        newQty: mode === 'replace' ? importedCount : items.length + importedCount,
+        delta: importedCount,
+        notes: `Mode: ${mode}`,
+        timestamp: now,
+      };
+      await saveLogToFirestore(log);
+
+      showToast(
+        `Import XLSX tersimpan di Firebase Cloud: ${importedCount} baru, ${updatedCount} diperbarui.`,
+        'success'
+      );
+      return true;
+    } catch (err) {
+      console.error('Error batch import:', err);
+      showToast('Gagal memproses import data ke Firebase Cloud.', 'alert');
       return false;
     }
   };
 
-  // Reset all counts for a new session with in-app modal confirmation
+  // Reset all counts for a new session directly in Firebase Cloud
   const handleResetSession = () => {
     setIsResetConfirmModalOpen(true);
   };
@@ -602,17 +877,33 @@ export default function App() {
   const executeResetSession = async () => {
     setIsResetConfirmModalOpen(false);
     try {
-      const res = await fetch('/api/reset-counts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user: activeUser }),
-      });
-      if (res.ok) {
-        showToast('Semua stok fisik telah di-reset ke 0 untuk sesi baru.', 'alert');
-        fetchInventoryData();
-      }
+      const now = new Date().toISOString();
+      const resetItems: InventoryItem[] = items.map((i) => ({
+        ...i,
+        quantity: 0,
+        lastUpdatedBy: activeUser,
+        updatedAt: now,
+      }));
+      await batchSaveItemsToFirestore(resetItems);
+      const resetLog: ScanAuditLog = {
+        id: `log-${Date.now()}`,
+        itemId: 'all',
+        sku: 'RESET',
+        namaBarang: 'Reset Semua Stok Fisik Menjadi 0 untuk Sesi Opname Baru',
+        barcode: '-',
+        user: activeUser,
+        action: 'SET_QUANTITY',
+        previousQty: 0,
+        newQty: 0,
+        delta: 0,
+        notes: 'Reset sesi stok opname baru',
+        timestamp: now,
+      };
+      await saveLogToFirestore(resetLog);
+      showToast('Semua stok fisik telah di-reset ke 0 di Firebase Cloud.', 'alert');
     } catch (err) {
       console.error('Reset error:', err);
+      showToast('Gagal mereset sesi opname di Firebase Cloud.', 'alert');
     }
   };
 
@@ -736,6 +1027,17 @@ export default function App() {
                   <Cloud className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
                   <span>Cloud DB</span>
                 </span>
+
+                {/* Tanggal Opname Dilaksanakan Badge */}
+                <button
+                  type="button"
+                  onClick={() => setIsOpnameDateModalOpen(true)}
+                  className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold font-mono bg-blue-50 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800/80 hover:bg-blue-100 dark:hover:bg-blue-900/60 transition-colors cursor-pointer"
+                  title="Klik untuk menentukan atau mengubah tanggal pelaksanaan opname"
+                >
+                  <Calendar className="w-3 h-3 text-blue-600 dark:text-blue-400" />
+                  <span>Tgl: {session.opnameDate || 'Pilih'}</span>
+                </button>
               </div>
               <div className="hidden sm:flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400 font-mono">
                 <span>Multi-User Live</span>
@@ -839,43 +1141,7 @@ export default function App() {
       </header>
 
       {/* Main Content Viewport */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-4 sm:space-y-6">
-        {/* Mobile Navigation Tabs (Segregated for easy touch navigation) */}
-        <div className="flex md:hidden items-center p-1 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs font-semibold">
-          <button
-            type="button"
-            onClick={() => setActiveViewTab('opname')}
-            className={`flex-1 py-2 text-center rounded-lg transition-colors ${
-              activeViewTab === 'opname'
-                ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-2xs font-bold'
-                : 'text-slate-600 dark:text-slate-400'
-            }`}
-          >
-            Stok Opname
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveViewTab('laporan')}
-            className={`flex-1 py-2 text-center rounded-lg transition-colors ${
-              activeViewTab === 'laporan'
-                ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-2xs font-bold'
-                : 'text-slate-600 dark:text-slate-400'
-            }`}
-          >
-            Laporan
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveViewTab('kategori')}
-            className={`flex-1 py-2 text-center rounded-lg transition-colors ${
-              activeViewTab === 'kategori'
-                ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-2xs font-bold'
-                : 'text-slate-600 dark:text-slate-400'
-            }`}
-          >
-            Kategori
-          </button>
-        </div>
+      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 pt-3 pb-24 md:pb-8 space-y-3 sm:space-y-6">
 
         {/* HERO SECTION / FINANCIAL METRICS DASHBOARD */}
         <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-5 shadow-xs transition-colors">
@@ -899,8 +1165,35 @@ export default function App() {
               </p>
             </div>
 
-            {/* Action Bar (Disederhanakan untuk Mobile & Desktop) */}
-            <div className="flex items-center flex-wrap gap-1.5 sm:gap-2">
+            {/* ACTION BAR: Clean & uncluttered in Mobile, Full in Desktop */}
+            {/* 1. Mobile Simple 2-Button Action Bar (sm:hidden) */}
+            <div className="flex sm:hidden items-center justify-between gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingItem(null);
+                  setPrefilledBarcode('');
+                  setIsItemFormOpen(true);
+                }}
+                className="flex-1 py-2 px-3 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 active:scale-98 rounded-xl flex items-center justify-center gap-1.5 shadow-xs transition-transform"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Tambah Barang</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsMobileMenuOpen(true)}
+                className="py-2 px-3.5 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-98 rounded-xl flex items-center gap-1.5 transition-colors border border-slate-200 dark:border-slate-700"
+              >
+                <SlidersHorizontal className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                <span>Menu Lengkap</span>
+              </button>
+            </div>
+
+            {/* 2. Desktop Full Horizontal Action Bar (hidden sm:flex) */}
+            <div className="hidden sm:flex items-center flex-wrap gap-1.5 sm:gap-2">
+              {/* Tambah Barang */}
               <button
                 type="button"
                 onClick={() => {
@@ -914,6 +1207,7 @@ export default function App() {
                 <span>Tambah Barang</span>
               </button>
 
+              {/* Kalkulator */}
               <button
                 type="button"
                 onClick={() => {
@@ -927,15 +1221,53 @@ export default function App() {
                 <span>Kalkulator</span>
               </button>
 
+              {/* Fitur Tentukan Tanggal Opname */}
               <button
                 type="button"
-                onClick={() => handleOpenUploadXlsx('import')}
-                className="px-2.5 sm:px-3 py-1.5 text-xs font-semibold text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 border border-emerald-200 dark:border-emerald-800/80 rounded-lg flex items-center gap-1.5 transition-colors shadow-2xs"
-                title="Upload / Import Data Stok Barang dari file Excel XLSX (Khusus Petugas IYAN)"
+                onClick={() => setIsOpnameDateModalOpen(true)}
+                className="px-2.5 sm:px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 rounded-lg flex items-center gap-1.5 transition-colors"
+                title="Tentukan Tanggal & Periode Pelaksanaan Opname"
               >
-                <Upload className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                <span>Upload Data XLSX</span>
+                <Calendar className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                <span>Tgl Opname</span>
               </button>
+
+              {/* Fitur Pencatatan KAS, HUTANG & PIUTANG - HANYA DAPAT DILIHAT DAN DI ISI OLEH USER IYAN DAN HENDRI */}
+              {(activeUser === 'IYAN' || activeUser === 'HENDRI') && (
+                <button
+                  type="button"
+                  onClick={() => setIsFinanceModalOpen(true)}
+                  className="px-2.5 sm:px-3 py-1.5 text-xs font-semibold text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 border border-emerald-200 dark:border-emerald-800/80 rounded-lg flex items-center gap-1.5 transition-colors shadow-2xs"
+                  title="Pencatatan Kas, Hutang Mitra & Saldo Santri, serta Piutang Marhalah (Khusus IYAN & HENDRI)"
+                >
+                  <Banknote className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                  <span>Kas & Hutang-Piutang</span>
+                </button>
+              )}
+
+              {/* Fitur LAPORAN HASIL OPNAME (Neraca Keuangan, Fisik & Pengesahan) */}
+              <button
+                type="button"
+                onClick={() => setIsLaporanHasilOpnameOpen(true)}
+                className="px-2.5 sm:px-3 py-1.5 text-xs font-semibold text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/60 hover:bg-purple-100 dark:hover:bg-purple-900/60 border border-purple-200 dark:border-purple-800/80 rounded-lg flex items-center gap-1.5 transition-colors shadow-2xs"
+                title="Buka Laporan Hasil Opname Resmi, Neraca Keuangan Mart & Berita Acara"
+              >
+                <FileText className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+                <span>Hasil Opname</span>
+              </button>
+
+              {/* Fitur IMPORT/EXPORT DATA XLSX - HANYA TAMPIL UNTUK USER IYAN */}
+              {activeUser === 'IYAN' && (
+                <button
+                  type="button"
+                  onClick={() => handleOpenImportExport('import')}
+                  className="px-2.5 sm:px-3 py-1.5 text-xs font-semibold text-sky-800 dark:text-sky-300 bg-sky-50 dark:bg-sky-950/60 hover:bg-sky-100 dark:hover:bg-sky-900/60 border border-sky-200 dark:border-sky-800/80 rounded-lg flex items-center gap-1.5 transition-colors shadow-2xs"
+                  title="Import & Export Data Stok Opname XLSX (Khusus Petugas IYAN)"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
+                  <span>Import/Export Data XLSX</span>
+                </button>
+              )}
 
               {/* Opsi Tampilan Button */}
               <button
@@ -1162,21 +1494,16 @@ export default function App() {
                   Distribusi total nilai modal barang yang diinvestasikan pada tiap kategori
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  if (activeUser === 'IYAN' && iyanToken) {
-                    exportInventoryToXLSX(items, stats || undefined);
-                  } else {
-                    setPasswordPromptPurpose('export_rekap');
-                    setIsPasswordPromptOpen(true);
-                  }
-                }}
-                className="px-3 py-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 border border-emerald-200 dark:border-emerald-800/80 rounded-lg flex items-center gap-1.5"
-                title="Khusus Petugas IYAN"
-              >
-                <Download className="w-3.5 h-3.5" /> Download Excel Rekap
-              </button>
+              {activeUser === 'IYAN' && (
+                <button
+                  type="button"
+                  onClick={() => handleOpenImportExport('export')}
+                  className="px-3 py-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 border border-emerald-200 dark:border-emerald-800/80 rounded-lg flex items-center gap-1.5"
+                  title="Download Excel Rekap - Khusus Petugas IYAN"
+                >
+                  <Download className="w-3.5 h-3.5" /> Download Excel Rekap
+                </button>
+              )}
             </div>
 
             <div className="overflow-x-auto">
@@ -1235,12 +1562,45 @@ export default function App() {
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
+                  onClick={() => setIsLaporanHasilOpnameOpen(true)}
+                  className="px-3.5 py-1.5 text-xs font-semibold text-white bg-purple-600 hover:bg-purple-700 rounded-lg flex items-center gap-1.5 shadow-xs transition-colors"
+                  title="Buka Berita Acara & Laporan Hasil Opname Lengkap"
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>Laporan Hasil Opname Resmi</span>
+                </button>
+
+                {(activeUser === 'IYAN' || activeUser === 'HENDRI') && (
+                  <button
+                    type="button"
+                    onClick={() => setIsFinanceModalOpen(true)}
+                    className="px-3 py-1.5 text-xs font-semibold text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 border border-emerald-200 dark:border-emerald-800/80 rounded-lg flex items-center gap-1.5 transition-colors"
+                    title="Pencatatan Kas, Hutang & Piutang (Khusus IYAN & HENDRI)"
+                  >
+                    <Banknote className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                    <span>Kas & Hutang-Piutang</span>
+                  </button>
+                )}
+
+                {activeUser === 'IYAN' && (
+                  <button
+                    type="button"
+                    onClick={() => handleOpenImportExport('export')}
+                    className="px-3 py-1.5 text-xs font-semibold text-sky-700 dark:text-sky-300 bg-sky-50 dark:bg-sky-950/60 hover:bg-sky-100 dark:hover:bg-sky-900/60 border border-sky-200 dark:border-sky-800/80 rounded-lg flex items-center gap-1.5 shadow-2xs transition-colors"
+                    title="Export Laporan Audit ke File Excel (.xlsx) - Khusus Petugas IYAN"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Export XLSX</span>
+                  </button>
+                )}
+                <button
+                  type="button"
                   onClick={() => setDiscrepancyFilter('MINUS')}
                   className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
                     discrepancyFilter === 'MINUS' ? 'bg-red-600 text-white' : 'bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/60'
                   }`}
                 >
-                  Hanya Selisih Kurang (Minus)
+                  Selisih Minus
                 </button>
                 <button
                   type="button"
@@ -1249,7 +1609,7 @@ export default function App() {
                     discrepancyFilter === 'PLUS' ? 'bg-blue-600 text-white' : 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/60'
                   }`}
                 >
-                  Hanya Selisih Lebih (Plus)
+                  Selisih Lebih
                 </button>
               </div>
             </div>
@@ -1400,9 +1760,9 @@ export default function App() {
 
                 <button
                   type="button"
-                  onClick={fetchInventoryData}
+                  onClick={() => showToast('Data tersinkronisasi otomatis secara realtime dengan Firebase Cloud', 'info')}
                   className="hidden sm:inline-flex p-1.5 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg transition-colors ml-auto"
-                  title="Refresh Data"
+                  title="Sinkronisasi Realtime"
                 >
                   <RefreshCw className="w-4 h-4" />
                 </button>
@@ -1418,14 +1778,16 @@ export default function App() {
               ) : filteredItems.length === 0 ? (
                 <div className="py-12 text-center text-xs text-slate-500 dark:text-slate-400 space-y-3">
                   <p>Tidak ada barang yang cocok dengan filter atau pencarian.</p>
-                  <button
-                    type="button"
-                    onClick={() => handleOpenUploadXlsx('import')}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900 border border-emerald-200 dark:border-emerald-800 rounded-lg shadow-2xs transition-colors"
-                  >
-                    <Upload className="w-3.5 h-3.5" />
-                    <span>Upload Data dari File XLSX</span>
-                  </button>
+                  {activeUser === 'IYAN' && (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenImportExport('import')}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900 border border-emerald-200 dark:border-emerald-800 rounded-lg shadow-2xs transition-colors"
+                    >
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>Import Data dari File XLSX</span>
+                    </button>
+                  )}
                 </div>
               ) : (
                 filteredItems.map((item) => {
@@ -1484,13 +1846,13 @@ export default function App() {
                         </div>
 
                         <div className="flex items-center gap-1.5">
-                          {/* Stepper with Kalkulator Tap */}
-                          <div className="inline-flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg border border-slate-200 dark:border-slate-700">
+                          {/* Ergonomic Mobile Thumb Stepper */}
+                          <div className="inline-flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700 shadow-2xs">
                             <button
                               type="button"
                               onClick={() => handleQuickDelta(item, -1)}
-                              className="w-8 h-8 rounded-md bg-white dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-800 dark:text-white flex items-center justify-center font-bold text-base shadow-2xs active:scale-95 transition-transform"
-                              title="Kurangi 1"
+                              className="w-10 h-10 rounded-lg bg-white dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 active:scale-90 text-slate-800 dark:text-white flex items-center justify-center font-black text-lg shadow-xs transition-transform"
+                              title="Kurangi 1 unit fisik"
                             >
                               -
                             </button>
@@ -1501,19 +1863,18 @@ export default function App() {
                                 setCalcTargetItem(item);
                                 setIsGlobalCalcOpen(true);
                               }}
-                              className="px-3 py-1 font-mono font-bold text-sm text-blue-600 dark:text-blue-400 flex items-center gap-1 hover:underline"
-                              title="Klik untuk buka kalkulator hitung"
+                              className="px-3.5 py-1.5 font-mono font-black text-base text-blue-600 dark:text-blue-400 flex items-center gap-1 active:scale-95 transition-transform"
+                              title="Ketuk angka untuk buka kalkulator kuantitas (dus/lusin)"
                             >
-                              <Calculator className="w-3.5 h-3.5 text-amber-500" />
+                              <Calculator className="w-3.5 h-3.5 text-amber-500 shrink-0" />
                               <span>{qty}</span>
-                              <span className="text-[10px] font-normal text-slate-400">pcs</span>
                             </button>
 
                             <button
                               type="button"
                               onClick={() => handleQuickDelta(item, 1)}
-                              className="w-8 h-8 rounded-md bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center font-bold text-base shadow-2xs active:scale-95 transition-transform"
-                              title="Tambah 1"
+                              className="w-10 h-10 rounded-lg bg-blue-600 hover:bg-blue-700 active:scale-90 text-white flex items-center justify-center font-black text-lg shadow-xs transition-transform"
+                              title="Tambah 1 unit fisik"
                             >
                               +
                             </button>
@@ -1570,14 +1931,16 @@ export default function App() {
                       <td colSpan={11} className="py-12 text-center text-slate-500 dark:text-slate-400">
                         <div className="space-y-3">
                           <p>Tidak ada barang yang cocok dengan filter atau pencarian.</p>
-                          <button
-                            type="button"
-                            onClick={() => handleOpenUploadXlsx('import')}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900 border border-emerald-200 dark:border-emerald-800 rounded-lg shadow-2xs transition-colors"
-                          >
-                            <Upload className="w-3.5 h-3.5" />
-                            <span>Upload Data dari File XLSX</span>
-                          </button>
+                          {activeUser === 'IYAN' && (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenImportExport('import')}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900 border border-emerald-200 dark:border-emerald-800 rounded-lg shadow-2xs transition-colors"
+                            >
+                              <Upload className="w-3.5 h-3.5" />
+                              <span>Import Data dari File XLSX</span>
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -1750,6 +2113,20 @@ export default function App() {
                 <span>
                   Total Modal Filter: <strong className="text-emerald-700 dark:text-emerald-400">{formatRupiah(filteredItems.reduce((acc, curr) => acc + curr.quantity * curr.hargaModal, 0))}</strong>
                 </span>
+                {activeUser === 'IYAN' && (
+                  <>
+                    <span>·</span>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenImportExport('export')}
+                      className="inline-flex items-center gap-1 text-sky-600 dark:text-sky-400 hover:text-sky-800 dark:hover:text-sky-300 font-semibold font-sans transition-colors cursor-pointer"
+                      title="Download / Export Data Tabel ke File Excel XLSX"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Export XLSX</span>
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -1956,6 +2333,75 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* 10. Opname Date & Session Info Modal */}
+      <OpnameDateModal
+        isOpen={isOpnameDateModalOpen}
+        onClose={() => setIsOpnameDateModalOpen(false)}
+        session={session}
+        onSaveSession={handleSaveOpnameSession}
+        activeUser={activeUser}
+      />
+
+      {/* 11. Pencatatan KAS, HUTANG & PIUTANG Modal (Khusus IYAN & HENDRI) */}
+      <FinanceManagerModal
+        isOpen={isFinanceModalOpen}
+        onClose={() => setIsFinanceModalOpen(false)}
+        finance={finance}
+        onSaveFinance={handleSaveFinanceRecord}
+        activeUser={activeUser}
+      />
+
+      {/* 12. Laporan Hasil Opname Komprehensif Modal */}
+      <LaporanHasilOpnameModal
+        isOpen={isLaporanHasilOpnameOpen}
+        onClose={() => setIsLaporanHasilOpnameOpen(false)}
+        items={items}
+        stats={stats}
+        session={session}
+        finance={finance}
+        activeUser={activeUser}
+      />
+
+      {/* 13. Mobile Bottom Dock Navigation (Thumb-friendly Bar at bottom of screen) */}
+      <MobileBottomDock
+        activeTab={activeViewTab}
+        onSelectTab={setActiveViewTab}
+        onOpenScanner={() => setIsScannerOpen(true)}
+        onOpenCalculator={() => {
+          setCalcTargetItem(null);
+          setIsGlobalCalcOpen(true);
+        }}
+        onOpenMenu={() => setIsMobileMenuOpen(true)}
+        activeUser={activeUser}
+      />
+
+      {/* 14. Mobile Full Actions Menu Bottom Sheet */}
+      <MobileMenuSheet
+        isOpen={isMobileMenuOpen}
+        onClose={() => setIsMobileMenuOpen(false)}
+        activeUser={activeUser}
+        session={session}
+        onOpenFinance={() => setIsFinanceModalOpen(true)}
+        onOpenImportExport={() => handleOpenImportExport('import')}
+        onOpenLaporanHasil={() => setIsLaporanHasilOpnameOpen(true)}
+        onOpenOpnameDate={() => setIsOpnameDateModalOpen(true)}
+        onOpenAddItem={() => {
+          setEditingItem(null);
+          setPrefilledBarcode('');
+          setIsItemFormOpen(true);
+        }}
+        onOpenCalculator={() => {
+          setCalcTargetItem(null);
+          setIsGlobalCalcOpen(true);
+        }}
+        onOpenAuditLogs={() => setIsAuditDrawerOpen(true)}
+        onOpenUserModal={() => setIsUserModalOpen(true)}
+        onOpenDisplayOptions={() => setIsDisplayMenuOpen(true)}
+        onResetSession={handleResetSession}
+        onSelectTab={setActiveViewTab}
+        showResetButton={showResetButton}
+      />
     </div>
   );
 }

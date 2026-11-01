@@ -14,7 +14,7 @@ import {
   orderBy,
   limit,
 } from 'firebase/firestore';
-import { InventoryItem, MartUser, ScanAuditLog } from '../types/inventory.ts';
+import { InventoryItem, MartUser, ScanAuditLog, OpnameSession, FinanceRecord } from '../types/inventory.ts';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 // Initialize Firebase App
@@ -224,3 +224,186 @@ export function subscribeToFirestoreLogs(
     }
   );
 }
+
+// Subscribe to users in Firestore
+export function subscribeToFirestoreUsers(
+  onUpdate: (users: MartUser[]) => void,
+  onError?: (err: Error) => void
+) {
+  const path = 'users';
+  return onSnapshot(
+    collection(db, path),
+    (snapshot) => {
+      const users: MartUser[] = [];
+      snapshot.forEach((docSnap) => {
+        users.push(docSnap.data() as MartUser);
+      });
+      if (users.length > 0) {
+        onUpdate(users);
+      }
+    },
+    (error) => {
+      try {
+        handleFirestoreError(error, OperationType.GET, path);
+      } catch (err) {
+        if (onError && err instanceof Error) {
+          onError(err);
+        }
+      }
+    }
+  );
+}
+
+// Save a user to Firestore
+export async function saveUserToFirestore(user: MartUser): Promise<void> {
+  const path = `users/${user.id}`;
+  try {
+    await setDoc(doc(db, 'users', user.id), user);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+// Replace all items in Firestore (for XLSX Replace mode)
+export async function replaceAllItemsInFirestore(newItems: InventoryItem[]): Promise<void> {
+  const path = 'items';
+  try {
+    const snapshot = await getDocs(collection(db, path));
+    const deleteBatches: any[] = [];
+    let currentBatch = writeBatch(db);
+    let count = 0;
+
+    snapshot.forEach((docSnap) => {
+      currentBatch.delete(docSnap.ref);
+      count++;
+      if (count >= 400) {
+        deleteBatches.push(currentBatch);
+        currentBatch = writeBatch(db);
+        count = 0;
+      }
+    });
+    if (count > 0) {
+      deleteBatches.push(currentBatch);
+    }
+
+    for (const b of deleteBatches) {
+      await b.commit();
+    }
+
+    await batchSaveItemsToFirestore(newItems);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+// Opname Session listener & saver
+export const DEFAULT_OPNAME_SESSION: OpnameSession = {
+  id: 'current_session',
+  opnameDate: new Date().toISOString().split('T')[0],
+  title: 'Stok Opname Mart Santri',
+  picIyan: 'IYAN',
+  picHendri: 'HENDRI',
+  notes: 'Sesi audit fisik stok barang mart, kas, hutang mitra, saldo santri, dan piutang marhalah.',
+  status: 'ongoing',
+  updatedAt: new Date().toISOString(),
+  updatedBy: 'Sistem',
+};
+
+export function subscribeToOpnameSession(callback: (session: OpnameSession) => void): () => void {
+  const path = 'settings';
+  const docRef = doc(db, path, 'current_session');
+  return onSnapshot(
+    docRef,
+    (docSnap) => {
+      if (docSnap.exists()) {
+        callback(docSnap.data() as OpnameSession);
+      } else {
+        // Seed default session if not exists
+        setDoc(docRef, DEFAULT_OPNAME_SESSION).catch((err) => {
+          console.error('Failed to seed default opname session:', err);
+        });
+        callback(DEFAULT_OPNAME_SESSION);
+      }
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.GET, path);
+    }
+  );
+}
+
+export async function saveOpnameSessionToFirestore(session: OpnameSession): Promise<void> {
+  const path = 'settings';
+  try {
+    const docRef = doc(db, path, 'current_session');
+    await setDoc(docRef, {
+      ...session,
+      updatedAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+// Finance Record listener & saver (Kas, Hutang Mitra, Saldo Santri, Piutang Marhalah)
+export const DEFAULT_FINANCE_RECORD: FinanceRecord = {
+  id: 'current',
+  kas: {
+    uangTunai: 0,
+    saldoBank: 0,
+    modalAwal: 0,
+    catatanKas: '',
+  },
+  piutangList: [],
+  hutangMitraList: [],
+  saldoSantriList: [],
+  lastUpdatedBy: 'Sistem',
+  updatedAt: new Date().toISOString(),
+};
+
+export function subscribeToFinanceRecord(callback: (finance: FinanceRecord) => void): () => void {
+  const path = 'finance';
+  const docRef = doc(db, path, 'current');
+  return onSnapshot(
+    docRef,
+    (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data() as FinanceRecord;
+        // Ensure robust arrays and kas structure
+        callback({
+          ...DEFAULT_FINANCE_RECORD,
+          ...data,
+          kas: {
+            ...DEFAULT_FINANCE_RECORD.kas,
+            ...(data.kas || {}),
+          },
+          piutangList: Array.isArray(data.piutangList) ? data.piutangList : [],
+          hutangMitraList: Array.isArray(data.hutangMitraList) ? data.hutangMitraList : [],
+          saldoSantriList: Array.isArray(data.saldoSantriList) ? data.saldoSantriList : [],
+        });
+      } else {
+        // Seed initial default record if empty
+        setDoc(docRef, DEFAULT_FINANCE_RECORD).catch((err) => {
+          console.error('Failed to seed default finance record:', err);
+        });
+        callback(DEFAULT_FINANCE_RECORD);
+      }
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.GET, path);
+    }
+  );
+}
+
+export async function saveFinanceRecordToFirestore(finance: FinanceRecord): Promise<void> {
+  const path = 'finance';
+  try {
+    const docRef = doc(db, path, 'current');
+    await setDoc(docRef, {
+      ...finance,
+      updatedAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+

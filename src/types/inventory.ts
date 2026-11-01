@@ -55,3 +55,70 @@ export interface InventoryStats {
     totalModal: number;
   }[];
 }
+
+export interface OpnameSession {
+  id: string;
+  opnameDate: string; // YYYY-MM-DD
+  title: string;
+  picIyan: string;
+  picHendri: string;
+  notes?: string;
+  status: 'draft' | 'ongoing' | 'completed';
+  updatedAt: string;
+  updatedBy: string;
+}
+
+export interface PiutangItem {
+  id: string;
+  namaMarhalah: string; // Nama marhalah yang memiliki hutang ke mart
+  jumlah: number; // Nominal piutang (Rp)
+  keterangan?: string;
+}
+
+export interface HutangMitraItem {
+  id: string;
+  namaMitra: string; // Nama mitra/supplier
+  jumlah: number; // Nominal hutang mart (Rp)
+  keterangan?: string;
+}
+
+export interface SaldoSantriItem {
+  id: string;
+  namaSantri: string; // Nama santri / asrama / titipan
+  jumlah: number; // Nominal saldo santri (Rp)
+  keterangan?: string;
+}
+
+export interface KasData {
+  uangTunai: number; // Uang tunai fisik (cash drawer / brankas)
+  saldoBank: number; // Saldo rekening bank / QRIS
+  modalAwal: number; // Nilai modal awal operasional mart
+  catatanKas?: string;
+}
+
+export interface FinanceRecord {
+  id: string;
+  kas: KasData;
+  piutangList: PiutangItem[];
+  hutangMitraList: HutangMitraItem[];
+  saldoSantriList: SaldoSantriItem[];
+  lastUpdatedBy: string;
+  updatedAt: string;
+}
+
+export interface LaporanOpnameSummary {
+  session: OpnameSession;
+  stats: InventoryStats;
+  finance: FinanceRecord;
+  totalKas: number;
+  totalPiutang: number;
+  totalHutangMitra: number;
+  totalSaldoSantri: number;
+  totalKewajiban: number; // Hutang Mitra + Saldo Santri
+  totalAsetLancar: number; // Total Kas + Total Piutang
+  totalAsetFisikBarang: number; // Nilai Modal Investasi Stok Fisik
+  totalAsetRiil: number; // Aset Fisik Barang + Total Kas + Total Piutang
+  nilaiBersihMart: number; // Total Aset Riil - Total Kewajiban
+  pertumbuhanModal: number; // Nilai Bersih Mart - Modal Awal
+}
+
