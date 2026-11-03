@@ -5,6 +5,11 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+
 jobs:
   build_and_deploy:
     runs-on: ubuntu-latest
@@ -15,14 +20,28 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: npm
+          node-version: 22
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
 
       - name: Install Dependencies
-        run: npm ci || npm install
+        run: bun install --frozen-lockfile
 
       - name: Build Production Bundle
-        run: npm run build
+        run: bun run build
+
+      - name: Verify Hosting output
+        run: test -s dist/index.html
+
+      - name: Verify Firebase credentials are configured
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_LEVEL_ZEPPLIN_L9V0L }}
+        run: |
+          if [ -z "$FIREBASE_SERVICE_ACCOUNT" ]; then
+            echo "Required GitHub Actions secret FIREBASE_SERVICE_ACCOUNT_LEVEL_ZEPPLIN_L9V0L is not configured."
+            exit 1
+          fi
 
       - name: Deploy to Firebase Hosting
         uses: FirebaseExtended/action-hosting-deploy@v0
