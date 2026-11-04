@@ -77,24 +77,9 @@ function loadStore(): StoreData {
     console.error('Error loading inventory store, fallback to initial data:', err);
   }
   const initialData: StoreData = {
-    items: INITIAL_ITEMS,
+    items: [],
     users: INITIAL_USERS,
-    logs: [
-      {
-        id: 'log-seed-1',
-        itemId: 'item-001',
-        sku: 'SMB-001',
-        namaBarang: 'Beras Ramos Super Premium 5kg',
-        barcode: '8999999100101',
-        user: 'IYAN',
-        action: 'SCAN_INCREMENT',
-        previousQty: 23,
-        newQty: 24,
-        delta: 1,
-        notes: 'Opname awal Rak Sembako',
-        timestamp: '2026-10-29T10:15:00.000Z',
-      },
-    ],
+    logs: [],
   };
   saveStore(initialData);
   return initialData;
@@ -778,7 +763,7 @@ async function startServer() {
   }
 
   app.listen(port, '0.0.0.0', () => {
-    console.log(`MartOpname Server running at http://0.0.0.0:${port}`);
+    console.log(`DR MART Server running at http://0.0.0.0:${port}`);
     initFirestoreData();
   });
 }

@@ -11,55 +11,118 @@ export function formatRupiah(amount: number): string {
   }).format(amount || 0);
 }
 
-// Export inventory data to formatted Excel (.xlsx)
+// Template kolom standar resmi import/export Mart
+export const EXCEL_TEMPLATE_COLUMNS = [
+  'Sku',
+  'Barcode',
+  'nama_produk',
+  'Kategori',
+  'satuan (pcs/box)',
+  'harga_modal',
+  'harga_jual',
+  'stok_awal',
+  'stok_minumum',
+  'status (AKTIF/NONAKTIF/ARSIP)',
+  'catatan',
+] as const;
+
+// Export inventory data to formatted Excel (.xlsx) using the official template columns
 export function exportInventoryToXLSX(items: InventoryItem[], stats?: InventoryStats) {
   const wb = XLSX.utils.book_new();
 
-  // Sheet 1: Data Stok Opname
-  const headers = [
+  // Sheet 1: Template Data Produk (Format 11 Kolom Standar Import/Export)
+  const templateHeaders = [...EXCEL_TEMPLATE_COLUMNS];
+
+  const templateRows = items.map((item) => {
+    const modal = Number(item.hargaModal) || 0;
+    const jual = Number(item.hargaJual) || (modal > 0 ? Math.round(modal * 1.15) : 0);
+    const stokAwal = item.stokAwal !== undefined ? Number(item.stokAwal) : (Number(item.quantitySystem) || 0);
+    const stokMin = item.stokMinimum !== undefined ? Number(item.stokMinimum) : 5;
+    const statusVal = item.status || 'AKTIF';
+    const satuanVal = item.satuan || 'pcs';
+
+    return [
+      item.sku,
+      item.barcode || '',
+      item.namaBarang,
+      item.kategori || 'Sembako',
+      satuanVal,
+      modal,
+      jual,
+      stokAwal,
+      stokMin,
+      statusVal,
+      item.keterangan || '',
+    ];
+  });
+
+  const ws1 = XLSX.utils.aoa_to_sheet([templateHeaders, ...templateRows]);
+  ws1['!cols'] = [
+    { wch: 14 }, // Sku
+    { wch: 18 }, // Barcode
+    { wch: 36 }, // nama_produk
+    { wch: 18 }, // Kategori
+    { wch: 16 }, // satuan (pcs/box)
+    { wch: 14 }, // harga_modal
+    { wch: 14 }, // harga_jual
+    { wch: 12 }, // stok_awal
+    { wch: 14 }, // stok_minumum
+    { wch: 18 }, // status (AKTIF/NONAKTIF/ARSIP)
+    { wch: 28 }, // catatan
+  ];
+  XLSX.utils.book_append_sheet(wb, ws1, 'Data Produk (Template)');
+
+  // Sheet 2: Hasil Audit Stok Opname (Laporan Fisik vs Sistem)
+  const auditHeaders = [
     'No',
     'SKU',
-    'Nama Barang',
     'Barcode',
+    'Nama Produk',
     'Kategori',
-    'Stok Fisik',
-    'Stok Sistem',
+    'Satuan',
+    'Stok Fisik (Opname)',
+    'Stok Sistem (Awal)',
     'Selisih (Fisik - Sistem)',
     'Harga Modal (Rp)',
-    'Total Nilai Modal (Rp)',
+    'Harga Jual (Rp)',
+    'Total Modal Fisik (Rp)',
     'Selisih Modal (Rp)',
-    'Keterangan',
+    'Status',
+    'Catatan / Lokasi',
     'Petugas Terakhir',
     'Waktu Update',
   ];
 
-  const rows = items.map((item, index) => {
+  const auditRows = items.map((item, index) => {
     const qty = Number(item.quantity) || 0;
     const sysQty = Number(item.quantitySystem) || 0;
     const diff = qty - sysQty;
     const modal = Number(item.hargaModal) || 0;
+    const jual = Number(item.hargaJual) || 0;
     const totalModal = qty * modal;
     const diffModal = diff * modal;
 
     return [
       index + 1,
       item.sku,
+      item.barcode || '-',
       item.namaBarang,
-      item.barcode,
-      item.kategori,
+      item.kategori || 'Sembako',
+      item.satuan || 'pcs',
       qty,
       sysQty,
       diff,
       modal,
+      jual,
       totalModal,
       diffModal,
+      item.status || 'AKTIF',
       item.keterangan || '-',
       item.lastUpdatedBy || '-',
       item.updatedAt ? new Date(item.updatedAt).toLocaleString('id-ID') : '-',
     ];
   });
 
-  // Calculate totals
   const totalQty = items.reduce((sum, i) => sum + (Number(i.quantity) || 0), 0);
   const totalSys = items.reduce((sum, i) => sum + (Number(i.quantitySystem) || 0), 0);
   const totalModal = items.reduce((sum, i) => sum + (Number(i.quantity) || 0) * (Number(i.hargaModal) || 0), 0);
@@ -71,6 +134,7 @@ export function exportInventoryToXLSX(items: InventoryItem[], stats?: InventoryS
   const summaryRow = [
     'TOTAL',
     '',
+    '',
     `Total: ${items.length} Barang`,
     '',
     '',
@@ -78,37 +142,38 @@ export function exportInventoryToXLSX(items: InventoryItem[], stats?: InventoryS
     totalSys,
     totalQty - totalSys,
     '',
+    '',
     totalModal,
     totalDiffModal,
-    'Selesai Dihitung',
+    '',
+    'Hasil Opname',
     '',
     new Date().toLocaleString('id-ID'),
   ];
 
-  const wsData = [headers, ...rows, summaryRow];
-  const ws1 = XLSX.utils.aoa_to_sheet(wsData);
-
-  // Set column widths
-  ws1['!cols'] = [
-    { wch: 6 }, // No
-    { wch: 14 }, // SKU
-    { wch: 36 }, // Nama Barang
-    { wch: 18 }, // Barcode
-    { wch: 18 }, // Kategori
-    { wch: 12 }, // Stok Fisik
-    { wch: 12 }, // Stok Sistem
-    { wch: 14 }, // Selisih
-    { wch: 16 }, // Modal
-    { wch: 20 }, // Total Modal
-    { wch: 18 }, // Selisih Modal
-    { wch: 30 }, // Keterangan
-    { wch: 16 }, // Petugas
-    { wch: 20 }, // Waktu
+  const ws2 = XLSX.utils.aoa_to_sheet([auditHeaders, ...auditRows, summaryRow]);
+  ws2['!cols'] = [
+    { wch: 6 },
+    { wch: 14 },
+    { wch: 18 },
+    { wch: 34 },
+    { wch: 18 },
+    { wch: 10 },
+    { wch: 14 },
+    { wch: 14 },
+    { wch: 14 },
+    { wch: 16 },
+    { wch: 16 },
+    { wch: 20 },
+    { wch: 18 },
+    { wch: 12 },
+    { wch: 26 },
+    { wch: 16 },
+    { wch: 20 },
   ];
+  XLSX.utils.book_append_sheet(wb, ws2, 'Laporan Stok Opname');
 
-  XLSX.utils.book_append_sheet(wb, ws1, 'Laporan Stok Opname');
-
-  // Sheet 2: Rekap Per Kategori
+  // Sheet 3: Rekap Per Kategori
   if (stats && stats.categorySummary) {
     const catHeaders = ['No', 'Kategori', 'Jumlah Item SKU', 'Total Stok Fisik', 'Total Modal Diinvestasikan (Rp)'];
     const catRows = stats.categorySummary.map((cat, idx) => [
@@ -123,9 +188,9 @@ export function exportInventoryToXLSX(items: InventoryItem[], stats?: InventoryS
       ...catRows,
       ['TOTAL', 'Semua Kategori', stats.totalItems, stats.totalPhysicalQty, stats.totalModalInvestasi],
     ];
-    const ws2 = XLSX.utils.aoa_to_sheet(catWsData);
-    ws2['!cols'] = [{ wch: 6 }, { wch: 24 }, { wch: 18 }, { wch: 18 }, { wch: 30 }];
-    XLSX.utils.book_append_sheet(wb, ws2, 'Rekap Kategori');
+    const ws3 = XLSX.utils.aoa_to_sheet(catWsData);
+    ws3['!cols'] = [{ wch: 6 }, { wch: 24 }, { wch: 18 }, { wch: 18 }, { wch: 30 }];
+    XLSX.utils.book_append_sheet(wb, ws3, 'Rekap Kategori');
   }
 
   // Trigger download
@@ -134,35 +199,41 @@ export function exportInventoryToXLSX(items: InventoryItem[], stats?: InventoryS
   XLSX.writeFile(wb, fileName);
 }
 
-// Download Blank or Pre-filled Excel Template for Import
+// Download Official Blank or Sample Excel Template for Import
 export function downloadExcelTemplate() {
   const wb = XLSX.utils.book_new();
 
-  const headers = ['SKU', 'NAMA BARANG', 'BARCODE', 'KATEGORI', 'QUANTITY', 'HARGA MODAL', 'KETERANGAN'];
+  // Exactly matching requested 11 template headers
+  const headers = [...EXCEL_TEMPLATE_COLUMNS];
 
   const sampleRows = [
-    ['SMB-010', 'Garam Dapur Cap Kapal 250g', '8991234500010', 'Bumbu Dapur', 40, 2500, 'Rak Bumbu B1'],
-    ['MNM-020', 'Teh Pucuk Harum 350ml', '8991234500020', 'Minuman', 60, 3200, 'Chiller Depan'],
-    ['SNK-030', 'Taro Net Seaweed 65g', '8991234500030', 'Snack & Makanan', 24, 4800, 'Rak Snack C1'],
-    ['PRW-040', 'Shampoo Sunsilk Black Shine 160ml', '8991234500040', 'Perawatan Pribadi', 18, 21500, 'Rak Sampo D2'],
+    ['SMB-001', '8991234500010', 'Bimoli Minyak Goreng 2 Liter Pouch', 'Sembako', 'pcs', 34000, 38500, 50, 10, 'AKTIF', 'Rak Sembako A1'],
+    ['MNM-002', '8991234500020', 'Aqua Botol 600ml (1 Dus/24)', 'Minuman', 'box', 48000, 54000, 25, 5, 'AKTIF', 'Gudang Minuman'],
+    ['SNK-003', '8991234500030', 'Chiki Balls Keju 55g', 'Snack & Makanan', 'pcs', 5500, 7000, 40, 12, 'AKTIF', 'Rak Depan Kasir'],
+    ['PRW-004', '8991234500040', 'Pasta Gigi Pepsodent 190g', 'Perawatan Pribadi', 'pcs', 12500, 15000, 20, 5, 'AKTIF', 'Etalase Mandi'],
+    ['ATK-005', '8991234500050', 'Buku Tulis Sinar Dunia 38 Lembar (1 Pack/10)', 'Alat Tulis & Kantor', 'box', 38000, 45000, 15, 3, 'AKTIF', 'Rak ATK C2'],
   ];
 
   const ws = XLSX.utils.aoa_to_sheet([headers, ...sampleRows]);
   ws['!cols'] = [
-    { wch: 14 },
-    { wch: 34 },
-    { wch: 18 },
-    { wch: 20 },
-    { wch: 12 },
-    { wch: 16 },
-    { wch: 28 },
+    { wch: 14 }, // Sku
+    { wch: 18 }, // Barcode
+    { wch: 38 }, // nama_produk
+    { wch: 20 }, // Kategori
+    { wch: 16 }, // satuan (pcs/box)
+    { wch: 14 }, // harga_modal
+    { wch: 14 }, // harga_jual
+    { wch: 12 }, // stok_awal
+    { wch: 14 }, // stok_minumum
+    { wch: 18 }, // status (AKTIF/NONAKTIF/ARSIP)
+    { wch: 28 }, // catatan
   ];
 
-  XLSX.utils.book_append_sheet(wb, ws, 'Template Import');
-  XLSX.writeFile(wb, 'Template_Import_Stok_Mart.xlsx');
+  XLSX.utils.book_append_sheet(wb, ws, 'Template Produk');
+  XLSX.writeFile(wb, 'Template_Import_Mart.xlsx');
 }
 
-// Parse uploaded XLSX / XLS file
+// Parse uploaded XLSX / XLS file using the 11-column template format
 export async function parseExcelFile(file: File): Promise<{
   success: boolean;
   data: Partial<InventoryItem>[];
@@ -193,21 +264,82 @@ export async function parseExcelFile(file: File): Promise<{
         const parsedItems: Partial<InventoryItem>[] = [];
 
         rawJson.forEach((row, idx) => {
-          // Normalize column keys
+          // Normalize column keys: remove spaces, underscores, hyphens, and brackets
           const normalized: Record<string, any> = {};
           Object.keys(row).forEach((k) => {
             const cleanKey = k.trim().toUpperCase().replace(/[\s_()\-]/g, '');
             normalized[cleanKey] = row[k];
           });
 
-          // Match variations
+          // Match the 11 requested template fields and their standard aliases
+          // 1. Sku
           const sku = normalized['SKU'] || normalized['KODESKU'] || normalized['KODEBARANG'] || '';
-          const nama = normalized['NAMABARANG'] || normalized['NAMA'] || normalized['BARANG'] || '';
+
+          // 2. Barcode
           const barcode = normalized['BARCODE'] || normalized['KODEBARCODE'] || normalized['EAN'] || '';
+
+          // 3. nama_produk
+          const nama =
+            normalized['NAMAPRODUK'] ||
+            normalized['NAMA_PRODUK'] ||
+            normalized['NAMABARANG'] ||
+            normalized['NAMA'] ||
+            normalized['PRODUK'] ||
+            normalized['BARANG'] ||
+            '';
+
+          // 4. Kategori
           const kategori = normalized['KATEGORI'] || normalized['CATEGORY'] || 'Sembako';
-          const qty = Number(normalized['QUANTITY'] || normalized['QTY'] || normalized['STOKFISIK'] || normalized['STOK'] || 0);
-          const modal = Number(normalized['HARGAMODAL'] || normalized['MODAL'] || normalized['HARGABELI'] || normalized['HARGA'] || 0);
-          const ket = normalized['KETERANGAN'] || normalized['CATATAN'] || normalized['NOTES'] || '';
+
+          // 5. satuan (pcs/box)
+          const rawSatuan = String(normalized['SATUANPCSBOX'] || normalized['SATUAN'] || normalized['UNIT'] || 'pcs').trim().toLowerCase();
+          const satuan = rawSatuan.includes('box') || rawSatuan.includes('dus') || rawSatuan.includes('karton') ? 'box' : (rawSatuan || 'pcs');
+
+          // 6. harga_modal
+          const modal = Number(normalized['HARGAMODAL'] || normalized['MODAL'] || normalized['HARGABELI'] || 0);
+
+          // 7. harga_jual
+          const jual = Number(normalized['HARGAJUAL'] || normalized['JUAL'] || normalized['HARGA'] || 0);
+
+          // 8. stok_awal
+          const stokAwal = Number(
+            normalized['STOKAWAL'] ||
+            normalized['STOK_AWAL'] ||
+            normalized['STOKSISTEM'] ||
+            normalized['STOK'] ||
+            normalized['QUANTITY'] ||
+            normalized['QTY'] ||
+            0
+          );
+
+          // 9. stok_minumum (tolerates 'stok_minumum' and 'stok_minimum')
+          const stokMin = Number(
+            normalized['STOKMINUMUM'] ||
+            normalized['STOKMINIMUM'] ||
+            normalized['STOK_MINUMUM'] ||
+            normalized['STOK_MINIMUM'] ||
+            normalized['MINSTOK'] ||
+            normalized['MINIMUM'] ||
+            0
+          );
+
+          // 10. status (AKTIF/NONAKTIF/ARSIP)
+          const rawStatus = String(
+            normalized['STATUSAKTIFNONAKTIFARSIP'] ||
+            normalized['STATUS'] ||
+            'AKTIF'
+          ).trim().toUpperCase();
+          let status: 'AKTIF' | 'NONAKTIF' | 'ARSIP' = 'AKTIF';
+          if (rawStatus.includes('NON') || rawStatus.includes('TIDAK') || rawStatus.includes('INAKTIF')) {
+            status = 'NONAKTIF';
+          } else if (rawStatus.includes('ARSIP') || rawStatus.includes('ARCHIVE')) {
+            status = 'ARSIP';
+          } else {
+            status = 'AKTIF';
+          }
+
+          // 11. catatan
+          const catatan = normalized['CATATAN'] || normalized['KETERANGAN'] || normalized['NOTES'] || '';
 
           if (!sku && !nama && !barcode) {
             // Empty row, skip
@@ -215,7 +347,7 @@ export async function parseExcelFile(file: File): Promise<{
           }
 
           if (!nama) {
-            errors.push(`Baris ${idx + 2}: Nama Barang tidak boleh kosong.`);
+            errors.push(`Baris ${idx + 2}: nama_produk tidak boleh kosong.`);
           }
 
           parsedItems.push({
@@ -223,10 +355,15 @@ export async function parseExcelFile(file: File): Promise<{
             namaBarang: String(nama || 'Tanpa Nama').trim(),
             barcode: String(barcode).trim(),
             kategori: String(kategori).trim() || 'Sembako',
-            quantity: Math.max(0, isNaN(qty) ? 0 : qty),
-            quantitySystem: Math.max(0, isNaN(qty) ? 0 : qty),
+            satuan,
             hargaModal: Math.max(0, isNaN(modal) ? 0 : modal),
-            keterangan: String(ket).trim() || 'Hasil Import XLSX',
+            hargaJual: Math.max(0, isNaN(jual) ? 0 : jual),
+            stokAwal: Math.max(0, isNaN(stokAwal) ? 0 : stokAwal),
+            quantitySystem: Math.max(0, isNaN(stokAwal) ? 0 : stokAwal),
+            quantity: Math.max(0, isNaN(stokAwal) ? 0 : stokAwal),
+            stokMinimum: Math.max(0, isNaN(stokMin) ? 0 : stokMin),
+            status,
+            keterangan: String(catatan).trim() || 'Import XLSX',
           });
         });
 

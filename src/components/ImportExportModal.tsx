@@ -254,21 +254,26 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
                     </div>
                   </div>
 
-                  <div className="border border-slate-200 dark:border-slate-800 rounded-lg p-4 space-y-2 text-xs text-slate-600 dark:text-slate-300">
-                    <p className="font-semibold text-slate-900 dark:text-white">Kolom Dalam File Excel (.xlsx):</p>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 font-mono text-[11px] text-slate-700 dark:text-slate-300">
-                      <span>· SKU</span>
-                      <span>· NAMA BARANG</span>
-                      <span>· BARCODE</span>
-                      <span>· KATEGORI</span>
-                      <span>· QUANTITY (Fisik)</span>
-                      <span>· HARGA MODAL</span>
-                      <span>· TOTAL MODAL</span>
-                      <span>· SELISIH STOK</span>
-                      <span>· KETERANGAN</span>
+                  <div className="border border-slate-200 dark:border-slate-800 rounded-lg p-4 space-y-2.5 text-xs text-slate-600 dark:text-slate-300">
+                    <div className="flex items-center justify-between">
+                      <p className="font-bold text-slate-900 dark:text-white">Format Kolom Template Excel (.xlsx):</p>
+                      <span className="text-[10px] bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 px-2 py-0.5 rounded font-mono font-bold">11 Kolom Standar</span>
                     </div>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400 pt-1">
-                      Termasuk 2 Sheet: Sheet utama berisi data detail barang, dan Sheet kedua berisi rekapitulasi modal per kategori.
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 font-mono text-[11px] text-slate-800 dark:text-slate-200 bg-slate-50 dark:bg-slate-800/60 p-2.5 rounded-lg border border-slate-100 dark:border-slate-800">
+                      <span>1. Sku</span>
+                      <span>2. Barcode</span>
+                      <span>3. nama_produk</span>
+                      <span>4. Kategori</span>
+                      <span>5. satuan (pcs/box)</span>
+                      <span>6. harga_modal</span>
+                      <span>7. harga_jual</span>
+                      <span>8. stok_awal</span>
+                      <span>9. stok_minumum</span>
+                      <span>10. status (AKTIF/NONAKTIF/ARSIP)</span>
+                      <span>11. catatan</span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 pt-0.5">
+                      File export memuat <strong>Sheet 1: Data Produk (Template)</strong> sesuai format 11 kolom resmi di atas, serta <strong>Sheet 2: Laporan Stok Opname</strong> untuk hasil audit fisik & neraca selisih.
                     </p>
                   </div>
 
@@ -285,15 +290,20 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
               ) : (
                 <div className="space-y-4">
                   {/* Template Download Prompt */}
-                  <div className="flex items-center justify-between p-3.5 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/60 rounded-lg text-xs">
-                    <div className="flex items-center gap-2 text-blue-900 dark:text-blue-200">
-                      <FileText className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
-                      <span>Belum punya format Excel? Gunakan template standar kami.</span>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/60 rounded-lg text-xs">
+                    <div className="flex items-start gap-2 text-blue-900 dark:text-blue-200">
+                      <FileText className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+                      <div>
+                        <span className="font-semibold block">Gunakan Template Resmi 11 Kolom</span>
+                        <span className="text-[11px] text-blue-700 dark:text-blue-300">
+                          Sku, Barcode, nama_produk, Kategori, satuan (pcs/box), harga_modal, harga_jual, stok_awal, stok_minumum, status, catatan.
+                        </span>
+                      </div>
                     </div>
                     <button
                       type="button"
                       onClick={downloadExcelTemplate}
-                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-md flex items-center gap-1.5 whitespace-nowrap transition-colors"
+                      className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-md flex items-center justify-center gap-1.5 whitespace-nowrap transition-colors shrink-0 shadow-xs"
                     >
                       <Download className="w-3.5 h-3.5" /> Download Template XLSX
                     </button>
@@ -316,7 +326,7 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
                       Tarik & Lepaskan File Excel (.xlsx / .xls) ke sini
                     </p>
                     <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 mb-3">
-                      Atau klik tombol di bawah untuk memilih file dari komputer
+                      Mendukung template 11 kolom DR MART atau file Excel barang dari kasir
                     </p>
                     <label className="inline-block px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer shadow-xs transition-colors">
                       Pilih File XLSX
@@ -354,10 +364,10 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
                   {/* Parsed Preview Table */}
                   {parsedPreview && parsedPreview.length > 0 && (
                     <div className="space-y-3">
-                      <div className="flex items-center justify-between">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                         <div className="flex items-center gap-1.5 text-xs text-emerald-800 dark:text-emerald-300 font-semibold">
                           <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                          <span>{parsedPreview.length} Data Barang Ditemukan di File Excel</span>
+                          <span>{parsedPreview.length} Data Barang Siap Diimport</span>
                         </div>
 
                         {/* Mode selection */}
@@ -375,29 +385,55 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
                       </div>
 
                       {/* Preview Table */}
-                      <div className="border border-slate-200 dark:border-slate-700 rounded-lg overflow-x-auto max-h-48">
+                      <div className="border border-slate-200 dark:border-slate-700 rounded-lg overflow-x-auto max-h-52">
                         <table className="w-full text-[11px] text-left">
                           <thead className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 sticky top-0 border-b border-slate-200 dark:border-slate-700">
                             <tr>
-                              <th className="px-2.5 py-1.5 font-semibold">SKU</th>
-                              <th className="px-2.5 py-1.5 font-semibold">Nama Barang</th>
+                              <th className="px-2.5 py-1.5 font-semibold">Sku</th>
                               <th className="px-2.5 py-1.5 font-semibold">Barcode</th>
+                              <th className="px-2.5 py-1.5 font-semibold min-w-[160px]">nama_produk</th>
                               <th className="px-2.5 py-1.5 font-semibold">Kategori</th>
-                              <th className="px-2.5 py-1.5 font-semibold text-right">Qty</th>
-                              <th className="px-2.5 py-1.5 font-semibold text-right">Harga Modal</th>
-                              <th className="px-2.5 py-1.5 font-semibold">Keterangan</th>
+                              <th className="px-2.5 py-1.5 font-semibold">satuan</th>
+                              <th className="px-2.5 py-1.5 font-semibold text-right">harga_modal</th>
+                              <th className="px-2.5 py-1.5 font-semibold text-right">harga_jual</th>
+                              <th className="px-2.5 py-1.5 font-semibold text-right">stok_awal</th>
+                              <th className="px-2.5 py-1.5 font-semibold text-right">stok_min</th>
+                              <th className="px-2.5 py-1.5 font-semibold text-center">status</th>
+                              <th className="px-2.5 py-1.5 font-semibold">catatan</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-mono">
                             {parsedPreview.slice(0, 10).map((row, idx) => (
                               <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/60">
                                 <td className="px-2.5 py-1 font-bold text-slate-800 dark:text-slate-200">{row.sku}</td>
-                                <td className="px-2.5 py-1 font-sans text-slate-900 dark:text-white">{row.namaBarang}</td>
                                 <td className="px-2.5 py-1 text-slate-600 dark:text-slate-400">{row.barcode || '-'}</td>
+                                <td className="px-2.5 py-1 font-sans text-slate-900 dark:text-white font-medium">{row.namaBarang}</td>
                                 <td className="px-2.5 py-1 font-sans text-slate-600 dark:text-slate-400">{row.kategori}</td>
-                                <td className="px-2.5 py-1 text-right font-bold text-slate-900 dark:text-white">{row.quantity}</td>
+                                <td className="px-2.5 py-1 text-slate-700 dark:text-slate-300">{row.satuan || 'pcs'}</td>
                                 <td className="px-2.5 py-1 text-right text-slate-800 dark:text-slate-200">
                                   {formatRupiah(row.hargaModal || 0)}
+                                </td>
+                                <td className="px-2.5 py-1 text-right text-slate-800 dark:text-slate-200">
+                                  {formatRupiah(row.hargaJual || 0)}
+                                </td>
+                                <td className="px-2.5 py-1 text-right font-bold text-slate-900 dark:text-white">
+                                  {row.stokAwal !== undefined ? row.stokAwal : row.quantitySystem}
+                                </td>
+                                <td className="px-2.5 py-1 text-right text-slate-600 dark:text-slate-400">
+                                  {row.stokMinimum || 0}
+                                </td>
+                                <td className="px-2.5 py-1 text-center font-sans">
+                                  <span
+                                    className={`inline-block text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                                      row.status === 'NONAKTIF'
+                                        ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                                        : row.status === 'ARSIP'
+                                        ? 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300'
+                                        : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                                    }`}
+                                  >
+                                    {row.status || 'AKTIF'}
+                                  </span>
                                 </td>
                                 <td className="px-2.5 py-1 font-sans text-slate-500 dark:text-slate-400 truncate max-w-xs">
                                   {row.keterangan || '-'}

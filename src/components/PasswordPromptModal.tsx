@@ -135,18 +135,9 @@ export const PasswordPromptModal: React.FC<PasswordPromptModalProps> = ({
                 {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
-            <div className="flex items-center justify-between mt-1.5 pt-1">
-              <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                Password IYAN: <code className="font-mono font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950 px-1 py-0.5 rounded">Kantin0011@</code>
-              </span>
-              <button
-                type="button"
-                onClick={() => setPassword('Kantin0011@')}
-                className="text-[11px] font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 hover:underline"
-              >
-                Isi Otomatis
-              </button>
-            </div>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5">
+              Masukkan kata sandi rahasia untuk melanjutkan otorisasi akses.
+            </p>
           </div>
 
           <div className="flex items-center justify-end gap-2 pt-2">

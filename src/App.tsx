@@ -51,6 +51,7 @@ import {
   DEFAULT_FINANCE_RECORD,
   saveItemToFirestore,
   deleteItemFromFirestore,
+  clearAllItemsFromFirestore,
   saveLogToFirestore,
   batchSaveItemsToFirestore,
   replaceAllItemsInFirestore,
@@ -74,6 +75,7 @@ import { FinanceManagerModal } from './components/FinanceManagerModal.tsx';
 import { LaporanHasilOpnameModal } from './components/LaporanHasilOpnameModal.tsx';
 import { MobileBottomDock } from './components/MobileBottomDock.tsx';
 import { MobileMenuSheet } from './components/MobileMenuSheet.tsx';
+import { FinancialTrendChart } from './components/FinancialTrendChart.tsx';
 import { useTheme } from './utils/useTheme.ts';
 import { ThemeToggle } from './components/ThemeToggle.tsx';
 
@@ -131,6 +133,7 @@ export default function App() {
   const [calcTargetItem, setCalcTargetItem] = useState<InventoryItem | null>(null);
   const [deleteConfirmItem, setDeleteConfirmItem] = useState<InventoryItem | null>(null);
   const [isResetConfirmModalOpen, setIsResetConfirmModalOpen] = useState(false);
+  const [isClearDemoModalOpen, setIsClearDemoModalOpen] = useState(false);
 
   // Opname Session state (Tanggal pelaksanaan opname & tim pemeriksa)
   const [session, setSession] = useState<OpnameSession>(DEFAULT_OPNAME_SESSION);
@@ -268,31 +271,15 @@ export default function App() {
   // Initialize direct real-time Firebase Cloud Firestore connection
   // Back end: Firebase Cloud Firestore | Front end: GitHub Pages
   useEffect(() => {
-    let isInitialSeeded = false;
-
     testFirestoreConnection().then((connected) => {
       setIsCloudConnected(connected);
     });
 
-    // Real-time listener for Items from Firebase Cloud Firestore
+    // Real-time listener for Items from Firebase Cloud Firestore (Clean, zero dummy items)
     const unsubscribeItems = subscribeToFirestoreItems(
-      async (cloudItems) => {
-        if (cloudItems.length === 0 && !isInitialSeeded) {
-          isInitialSeeded = true;
-          try {
-            console.log('Seeding initial items to Firestore from client...');
-            await batchSaveItemsToFirestore(INITIAL_ITEMS);
-            setItems(INITIAL_ITEMS);
-            setStats(calculateInventoryStats(INITIAL_ITEMS));
-          } catch (seedErr) {
-            console.error('Initial seed error:', seedErr);
-            setItems(INITIAL_ITEMS);
-            setStats(calculateInventoryStats(INITIAL_ITEMS));
-          }
-        } else {
-          setItems(cloudItems);
-          setStats(calculateInventoryStats(cloudItems));
-        }
+      (cloudItems) => {
+        setItems(cloudItems);
+        setStats(calculateInventoryStats(cloudItems));
         setIsLoading(false);
         setIsCloudConnected(true);
       },
@@ -603,9 +590,14 @@ export default function App() {
           namaBarang: (itemData.namaBarang || existing?.namaBarang || '').trim(),
           barcode: (itemData.barcode !== undefined ? itemData.barcode : existing?.barcode || '').trim(),
           kategori: itemData.kategori || existing?.kategori || 'Sembako',
+          satuan: itemData.satuan || existing?.satuan || 'pcs',
           quantity: newQty,
           quantitySystem: itemData.quantitySystem !== undefined ? Number(itemData.quantitySystem) : (existing?.quantitySystem || 0),
+          stokAwal: itemData.stokAwal !== undefined ? Number(itemData.stokAwal) : (existing?.stokAwal ?? existing?.quantitySystem ?? 0),
+          stokMinimum: itemData.stokMinimum !== undefined ? Number(itemData.stokMinimum) : (existing?.stokMinimum ?? 5),
           hargaModal: itemData.hargaModal !== undefined ? Number(itemData.hargaModal) : (existing?.hargaModal || 0),
+          hargaJual: itemData.hargaJual !== undefined ? Number(itemData.hargaJual) : (existing?.hargaJual || 0),
+          status: itemData.status || existing?.status || 'AKTIF',
           keterangan: itemData.keterangan !== undefined ? itemData.keterangan : (existing?.keterangan || ''),
           lastUpdatedBy: activeUser,
           updatedAt: now,
@@ -638,9 +630,14 @@ export default function App() {
           namaBarang: (itemData.namaBarang || 'Barang Baru').trim(),
           barcode: (itemData.barcode || '').trim(),
           kategori: itemData.kategori || 'Sembako',
+          satuan: itemData.satuan || 'pcs',
           quantity: Math.max(0, Number(itemData.quantity) || 0),
           quantitySystem: Math.max(0, Number(itemData.quantitySystem) || 0),
+          stokAwal: itemData.stokAwal !== undefined ? Math.max(0, Number(itemData.stokAwal)) : Math.max(0, Number(itemData.quantitySystem) || 0),
+          stokMinimum: itemData.stokMinimum !== undefined ? Math.max(0, Number(itemData.stokMinimum)) : 5,
           hargaModal: Math.max(0, Number(itemData.hargaModal) || 0),
+          hargaJual: Math.max(0, Number(itemData.hargaJual) || 0),
+          status: itemData.status || 'AKTIF',
           keterangan: itemData.keterangan || 'Barang Baru Ditambahkan',
           lastUpdatedBy: activeUser,
           updatedAt: now,
@@ -788,9 +785,14 @@ export default function App() {
           namaBarang: String(raw.namaBarang || 'Barang Tanpa Nama').trim(),
           barcode: String(raw.barcode || '').trim(),
           kategori: String(raw.kategori || 'Sembako').trim(),
-          quantity: Math.max(0, Number(raw.quantity) || 0),
-          quantitySystem: Math.max(0, Number(raw.quantitySystem !== undefined ? raw.quantitySystem : raw.quantity) || 0),
+          satuan: String(raw.satuan || 'pcs').trim(),
+          quantity: Math.max(0, Number(raw.quantity !== undefined ? raw.quantity : raw.stokAwal) || 0),
+          quantitySystem: Math.max(0, Number(raw.quantitySystem !== undefined ? raw.quantitySystem : (raw.stokAwal !== undefined ? raw.stokAwal : raw.quantity)) || 0),
+          stokAwal: Math.max(0, Number(raw.stokAwal !== undefined ? raw.stokAwal : raw.quantitySystem) || 0),
+          stokMinimum: Math.max(0, Number(raw.stokMinimum !== undefined ? raw.stokMinimum : 5)),
           hargaModal: Math.max(0, Number(raw.hargaModal) || 0),
+          hargaJual: Math.max(0, Number(raw.hargaJual) || 0),
+          status: raw.status || 'AKTIF',
           keterangan: String(raw.keterangan || 'Import XLSX').trim(),
           lastUpdatedBy: 'IYAN',
           updatedAt: now,
@@ -813,9 +815,14 @@ export default function App() {
               ...existing,
               namaBarang: raw.namaBarang ? String(raw.namaBarang).trim() : existing.namaBarang,
               kategori: raw.kategori ? String(raw.kategori).trim() : existing.kategori,
+              satuan: raw.satuan ? String(raw.satuan).trim() : (existing.satuan || 'pcs'),
               quantity: raw.quantity !== undefined ? Math.max(0, Number(raw.quantity)) : existing.quantity,
-              quantitySystem: raw.quantitySystem !== undefined ? Math.max(0, Number(raw.quantitySystem)) : existing.quantitySystem,
+              quantitySystem: raw.quantitySystem !== undefined ? Math.max(0, Number(raw.quantitySystem)) : (raw.stokAwal !== undefined ? Math.max(0, Number(raw.stokAwal)) : existing.quantitySystem),
+              stokAwal: raw.stokAwal !== undefined ? Math.max(0, Number(raw.stokAwal)) : (existing.stokAwal ?? existing.quantitySystem),
+              stokMinimum: raw.stokMinimum !== undefined ? Math.max(0, Number(raw.stokMinimum)) : (existing.stokMinimum ?? 5),
               hargaModal: raw.hargaModal !== undefined ? Math.max(0, Number(raw.hargaModal)) : existing.hargaModal,
+              hargaJual: raw.hargaJual !== undefined ? Math.max(0, Number(raw.hargaJual)) : (existing.hargaJual || 0),
+              status: raw.status || existing.status || 'AKTIF',
               keterangan: raw.keterangan !== undefined ? String(raw.keterangan) : existing.keterangan,
               lastUpdatedBy: 'IYAN',
               updatedAt: now,
@@ -828,9 +835,14 @@ export default function App() {
               namaBarang: String(raw.namaBarang || 'Barang Baru').trim(),
               barcode: rawBarcode || `BAR-${Date.now().toString().slice(-6)}-${idx}`,
               kategori: String(raw.kategori || 'Sembako').trim(),
-              quantity: Math.max(0, Number(raw.quantity) || 0),
-              quantitySystem: Math.max(0, Number(raw.quantitySystem !== undefined ? raw.quantitySystem : raw.quantity) || 0),
+              satuan: String(raw.satuan || 'pcs').trim(),
+              quantity: Math.max(0, Number(raw.quantity !== undefined ? raw.quantity : raw.stokAwal) || 0),
+              quantitySystem: Math.max(0, Number(raw.quantitySystem !== undefined ? raw.quantitySystem : (raw.stokAwal !== undefined ? raw.stokAwal : raw.quantity)) || 0),
+              stokAwal: Math.max(0, Number(raw.stokAwal !== undefined ? raw.stokAwal : raw.quantitySystem) || 0),
+              stokMinimum: Math.max(0, Number(raw.stokMinimum !== undefined ? raw.stokMinimum : 5)),
               hargaModal: Math.max(0, Number(raw.hargaModal) || 0),
+              hargaJual: Math.max(0, Number(raw.hargaJual) || 0),
+              status: raw.status || 'AKTIF',
               keterangan: String(raw.keterangan || 'Import XLSX').trim(),
               lastUpdatedBy: 'IYAN',
               updatedAt: now,
@@ -904,6 +916,38 @@ export default function App() {
     } catch (err) {
       console.error('Reset error:', err);
       showToast('Gagal mereset sesi opname di Firebase Cloud.', 'alert');
+    }
+  };
+
+  // Wipe all demo items from Firestore permanently
+  const executeClearAllDemoData = async () => {
+    setIsClearDemoModalOpen(false);
+    try {
+      setIsLoading(true);
+      await clearAllItemsFromFirestore();
+      setItems([]);
+      setStats(calculateInventoryStats([]));
+      const log: ScanAuditLog = {
+        id: `log-${Date.now()}`,
+        itemId: 'all',
+        sku: 'WIPE_DEMO',
+        namaBarang: 'Pembersihan Total Data Demo Toko',
+        barcode: '-',
+        user: activeUser,
+        action: 'DELETE_ITEM',
+        previousQty: items.length,
+        newQty: 0,
+        delta: -items.length,
+        notes: `Semua data demo (${items.length} item) dihapus permanen oleh ${activeUser}`,
+        timestamp: new Date().toISOString(),
+      };
+      await saveLogToFirestore(log);
+      showToast('Semua data demo berhasil dihapus dari Firebase Cloud. Database siap diisi barang riil mart.', 'success');
+    } catch (err) {
+      console.error('Clear all error:', err);
+      showToast('Gagal menghapus data demo di Firebase Cloud.', 'alert');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -1014,7 +1058,7 @@ export default function App() {
             <div>
               <div className="flex items-center gap-2">
                 <span className="text-lg font-bold tracking-tight text-slate-900 dark:text-white whitespace-nowrap">
-                  MartOpname
+                  DR MART
                 </span>
                 <span
                   className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold font-mono ${
@@ -1351,6 +1395,21 @@ export default function App() {
                       </label>
                     </div>
 
+                    {/* Tombol Khusus Hapus Seluruh Data Demo */}
+                    <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsDisplayMenuOpen(false);
+                          setIsClearDemoModalOpen(true);
+                        }}
+                        className="w-full py-2 px-3 text-xs font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-xl border border-red-200 dark:border-red-900/60 flex items-center justify-center gap-2 transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Hapus Semua Data Demo (0 Barang)</span>
+                      </button>
+                    </div>
+
                     {/* Footer Button */}
                     <div className="pt-1">
                       <button
@@ -1550,123 +1609,132 @@ export default function App() {
             </div>
           </div>
         ) : activeViewTab === 'laporan' ? (
-          /* LAPORAN SELISIH MODAL AUDIT VIEW */
-          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5 shadow-xs space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <h2 className="text-base font-bold text-slate-900 dark:text-white">Laporan Selisih Stok & Audit Modal</h2>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Daftar barang dengan perbedaan antara stok fisik hasil opname vs stok sistem mart
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsLaporanHasilOpnameOpen(true)}
-                  className="px-3.5 py-1.5 text-xs font-semibold text-white bg-purple-600 hover:bg-purple-700 rounded-lg flex items-center gap-1.5 shadow-xs transition-colors"
-                  title="Buka Berita Acara & Laporan Hasil Opname Lengkap"
-                >
-                  <FileText className="w-3.5 h-3.5" />
-                  <span>Laporan Hasil Opname Resmi</span>
-                </button>
+          /* TAB LAPORAN: 1. VISUALISASI GRAFIK TREN MODAL (RECHARTS) + 2. TABEL SELISIH AUDIT */
+          <div className="space-y-4 sm:space-y-6">
+            {/* Visualisasi Grafik Tren Nilai Modal Harian / Mingguan */}
+            <FinancialTrendChart
+              items={items}
+              logs={logs}
+              stats={stats}
+              finance={finance}
+              session={session}
+              isDark={isDark}
+            />
 
-                {(activeUser === 'IYAN' || activeUser === 'HENDRI') && (
+            {/* Tabel Selisih Stok & Audit Modal */}
+            <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-5 shadow-xs space-y-4 transition-colors">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-base font-bold text-slate-900 dark:text-white">Laporan Selisih Stok & Audit Modal</h2>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Daftar barang dengan perbedaan antara stok fisik hasil opname vs stok sistem mart
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
-                    onClick={() => setIsFinanceModalOpen(true)}
-                    className="px-3 py-1.5 text-xs font-semibold text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 border border-emerald-200 dark:border-emerald-800/80 rounded-lg flex items-center gap-1.5 transition-colors"
-                    title="Pencatatan Kas, Hutang & Piutang (Khusus IYAN & HENDRI)"
+                    onClick={() => setIsLaporanHasilOpnameOpen(true)}
+                    className="px-3.5 py-1.5 text-xs font-semibold text-white bg-purple-600 hover:bg-purple-700 rounded-lg flex items-center gap-1.5 shadow-xs transition-colors"
+                    title="Buka Berita Acara & Laporan Hasil Opname Lengkap"
                   >
-                    <Banknote className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                    <span>Kas & Hutang-Piutang</span>
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>Laporan Hasil Opname Resmi</span>
                   </button>
-                )}
 
-                {activeUser === 'IYAN' && (
+                  {(activeUser === 'IYAN' || activeUser === 'HENDRI') && (
+                    <button
+                      type="button"
+                      onClick={() => setIsFinanceModalOpen(true)}
+                      className="px-3 py-1.5 text-xs font-semibold text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 border border-emerald-200 dark:border-emerald-800/80 rounded-lg flex items-center gap-1.5 transition-colors"
+                      title="Pencatatan Kas, Hutang & Piutang (Khusus IYAN & HENDRI)"
+                    >
+                      <Banknote className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                      <span>Kas & Hutang-Piutang</span>
+                    </button>
+                  )}
+
+                  {activeUser === 'IYAN' && (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenImportExport('export')}
+                      className="px-3 py-1.5 text-xs font-semibold text-sky-700 dark:text-sky-300 bg-sky-50 dark:bg-sky-950/60 hover:bg-sky-100 dark:hover:bg-sky-900/60 border border-sky-200 dark:border-sky-800/80 rounded-lg flex items-center gap-1.5 shadow-2xs transition-colors"
+                      title="Export Laporan Audit ke File Excel (.xlsx) - Khusus Petugas IYAN"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Export XLSX</span>
+                    </button>
+                  )}
                   <button
                     type="button"
-                    onClick={() => handleOpenImportExport('export')}
-                    className="px-3 py-1.5 text-xs font-semibold text-sky-700 dark:text-sky-300 bg-sky-50 dark:bg-sky-950/60 hover:bg-sky-100 dark:hover:bg-sky-900/60 border border-sky-200 dark:border-sky-800/80 rounded-lg flex items-center gap-1.5 shadow-2xs transition-colors"
-                    title="Export Laporan Audit ke File Excel (.xlsx) - Khusus Petugas IYAN"
+                    onClick={() => setDiscrepancyFilter('MINUS')}
+                    className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
+                      discrepancyFilter === 'MINUS' ? 'bg-red-600 text-white' : 'bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/60'
+                    }`}
                   >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>Export XLSX</span>
+                    Selisih Minus
                   </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setDiscrepancyFilter('MINUS')}
-                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
-                    discrepancyFilter === 'MINUS' ? 'bg-red-600 text-white' : 'bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/60'
-                  }`}
-                >
-                  Selisih Minus
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDiscrepancyFilter('PLUS')}
-                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
-                    discrepancyFilter === 'PLUS' ? 'bg-blue-600 text-white' : 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/60'
-                  }`}
-                >
-                  Selisih Lebih
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => setDiscrepancyFilter('PLUS')}
+                    className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
+                      discrepancyFilter === 'PLUS' ? 'bg-blue-600 text-white' : 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/60'
+                    }`}
+                  >
+                    Selisih Lebih
+                  </button>
+                </div>
               </div>
-            </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs text-left">
-                <thead className="bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-b border-slate-200 dark:border-slate-700">
-                  <tr>
-                    <th className="px-4 py-3 font-semibold">SKU / Nama Barang</th>
-                    <th className="px-4 py-3 font-semibold">Kategori</th>
-                    <th className="px-4 py-3 font-semibold text-right">Fisik</th>
-                    <th className="px-4 py-3 font-semibold text-right">Sistem</th>
-                    <th className="px-4 py-3 font-semibold text-right">Selisih Fisik</th>
-                    <th className="px-4 py-3 font-semibold text-right">Harga Modal</th>
-                    <th className="px-4 py-3 font-semibold text-right">Selisih Modal (Rp)</th>
-                    <th className="px-4 py-3 font-semibold">Keterangan</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-mono">
-                  {filteredItems
-                    .filter((item) => (item.quantity - item.quantitySystem) !== 0)
-                    .map((item) => {
-                      const diff = item.quantity - item.quantitySystem;
-                      const diffModal = diff * item.hargaModal;
-                      return (
-                        <tr key={item.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/50">
-                          <td className="px-4 py-2.5">
-                            <span className="font-bold text-slate-800 dark:text-slate-100">{item.sku}</span>
-                            <p className="font-sans text-slate-900 dark:text-slate-200 font-medium">{item.namaBarang}</p>
-                          </td>
-                          <td className="px-4 py-2.5 font-sans text-slate-600 dark:text-slate-400">{item.kategori}</td>
-                          <td className="px-4 py-2.5 text-right font-bold text-slate-900 dark:text-white">{item.quantity}</td>
-                          <td className="px-4 py-2.5 text-right text-slate-500 dark:text-slate-400">{item.quantitySystem}</td>
-                          <td
-                            className={`px-4 py-2.5 text-right font-bold ${
-                              diff < 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'
-                            }`}
-                          >
-                            {diff > 0 ? `+${diff}` : diff} pcs
-                          </td>
-                          <td className="px-4 py-2.5 text-right text-slate-700 dark:text-slate-300">{formatRupiah(item.hargaModal)}</td>
-                          <td
-                            className={`px-4 py-2.5 text-right font-bold ${
-                              diffModal < 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'
-                            }`}
-                          >
-                            {diffModal > 0 ? `+` : ''}
-                            {formatRupiah(diffModal)}
-                          </td>
-                          <td className="px-4 py-2.5 font-sans text-slate-500 dark:text-slate-400 truncate max-w-xs">
-                            {item.keterangan || '-'}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                </tbody>
-              </table>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs text-left">
+                  <thead className="bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-b border-slate-200 dark:border-slate-700">
+                    <tr>
+                      <th className="px-4 py-3 font-semibold">SKU / Nama Barang</th>
+                      <th className="px-4 py-3 font-semibold">Kategori</th>
+                      <th className="px-4 py-3 font-semibold text-right">Fisik</th>
+                      <th className="px-4 py-3 font-semibold text-right">Sistem</th>
+                      <th className="px-4 py-3 font-semibold text-right">Selisih Fisik</th>
+                      <th className="px-4 py-3 font-semibold text-right">Harga Modal</th>
+                      <th className="px-4 py-3 font-semibold text-right">Selisih Modal (Rp)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-mono">
+                    {filteredItems
+                      .filter((item) => (item.quantity - item.quantitySystem) !== 0)
+                      .map((item) => {
+                        const diff = item.quantity - item.quantitySystem;
+                        const diffModal = diff * item.hargaModal;
+                        return (
+                          <tr key={item.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/50">
+                            <td className="px-4 py-2.5">
+                              <span className="font-bold text-slate-800 dark:text-slate-100">{item.sku}</span>
+                              <p className="font-sans text-slate-900 dark:text-slate-200 font-medium">{item.namaBarang}</p>
+                            </td>
+                            <td className="px-4 py-2.5 font-sans text-slate-600 dark:text-slate-400">{item.kategori}</td>
+                            <td className="px-4 py-2.5 text-right font-bold text-slate-900 dark:text-white">{item.quantity} {item.satuan || 'pcs'}</td>
+                            <td className="px-4 py-2.5 text-right text-slate-500 dark:text-slate-400">{item.quantitySystem} {item.satuan || 'pcs'}</td>
+                            <td
+                              className={`px-4 py-2.5 text-right font-bold ${
+                                diff < 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'
+                              }`}
+                            >
+                              {diff > 0 ? `+${diff}` : diff} {item.satuan || 'pcs'}
+                            </td>
+                            <td className="px-4 py-2.5 text-right text-slate-700 dark:text-slate-300">{formatRupiah(item.hargaModal)}</td>
+                            <td
+                              className={`px-4 py-2.5 text-right font-bold ${
+                                diffModal < 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'
+                              }`}
+                            >
+                              {diffModal > 0 ? `+` : ''}
+                              {formatRupiah(diffModal)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         ) : (
@@ -1807,6 +1875,25 @@ export default function App() {
                             <span className="text-[10px] text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
                               {item.kategori}
                             </span>
+                            <span className="text-[10px] font-mono text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
+                              {item.satuan || 'pcs'}
+                            </span>
+                            {item.status && item.status !== 'AKTIF' && (
+                              <span
+                                className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${
+                                  item.status === 'NONAKTIF'
+                                    ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                                    : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300'
+                                }`}
+                              >
+                                {item.status}
+                              </span>
+                            )}
+                            {item.stokMinimum !== undefined && qty <= item.stokMinimum && (
+                              <span className="text-[9px] font-bold px-1.5 py-0.2 bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300 rounded">
+                                Min: {item.stokMinimum}
+                              </span>
+                            )}
                           </div>
                           <h4 className="font-bold text-sm text-slate-900 dark:text-white mt-1 leading-snug">
                             {item.namaBarang}
@@ -1829,7 +1916,7 @@ export default function App() {
                                 : 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300'
                             }`}
                           >
-                            {diff === 0 ? '✓ Cocok' : diff < 0 ? `${diff} pcs` : `+${diff} pcs`}
+                            {diff === 0 ? '✓ Cocok' : diff < 0 ? `${diff} ${item.satuan || 'pcs'}` : `+${diff} ${item.satuan || 'pcs'}`}
                           </span>
                         </div>
                       </div>
@@ -1838,10 +1925,11 @@ export default function App() {
                       <div className="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-800/60">
                         <div className="text-xs">
                           <div className="text-slate-500 dark:text-slate-400">
-                            Sistem: <strong className="font-mono text-slate-800 dark:text-slate-200">{sysQty} pcs</strong>
+                            Sistem: <strong className="font-mono text-slate-800 dark:text-slate-200">{sysQty} {item.satuan || 'pcs'}</strong>
                           </div>
                           <div className="text-[11px] font-mono text-slate-500 dark:text-slate-400">
                             Modal: {formatRupiah(item.hargaModal)}
+                            {item.hargaJual ? ` • Jual: ${formatRupiah(item.hargaJual)}` : ''}
                           </div>
                         </div>
 
@@ -1913,7 +2001,6 @@ export default function App() {
                     <th className="px-3.5 py-2.5 text-right">SELISIH</th>
                     <th className="px-3.5 py-2.5 text-right">HARGA MODAL</th>
                     <th className="px-3.5 py-2.5 text-right">TOTAL MODAL</th>
-                    <th className="px-3.5 py-2.5 min-w-[160px]">KETERANGAN</th>
                     <th className="px-3.5 py-2.5">PETUGAS</th>
                     <th className="px-3.5 py-2.5 text-center">AKSI</th>
                   </tr>
@@ -1922,13 +2009,13 @@ export default function App() {
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {isLoading ? (
                     <tr>
-                      <td colSpan={11} className="py-12 text-center text-slate-400 dark:text-slate-500">
+                      <td colSpan={10} className="py-12 text-center text-slate-400 dark:text-slate-500">
                         Memuat data inventaris stok opname...
                       </td>
                     </tr>
                   ) : filteredItems.length === 0 ? (
                     <tr>
-                      <td colSpan={11} className="py-12 text-center text-slate-500 dark:text-slate-400">
+                      <td colSpan={10} className="py-12 text-center text-slate-500 dark:text-slate-400">
                         <div className="space-y-3">
                           <p>Tidak ada barang yang cocok dengan filter atau pencarian.</p>
                           {activeUser === 'IYAN' && (
@@ -1964,11 +2051,32 @@ export default function App() {
                             </span>
                           </td>
 
-                          {/* Nama Barang */}
+                          {/* Nama Barang & Satuan / Status */}
                           <td className="px-3.5 py-2">
-                            <span className="font-medium text-slate-900 dark:text-white block leading-tight">
-                              {item.namaBarang}
-                            </span>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-medium text-slate-900 dark:text-white leading-tight">
+                                {item.namaBarang}
+                              </span>
+                              <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1 rounded">
+                                {item.satuan || 'pcs'}
+                              </span>
+                              {item.status && item.status !== 'AKTIF' && (
+                                <span
+                                  className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${
+                                    item.status === 'NONAKTIF'
+                                      ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                                      : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300'
+                                  }`}
+                                >
+                                  {item.status}
+                                </span>
+                              )}
+                              {item.stokMinimum !== undefined && qty <= item.stokMinimum && (
+                                <span className="text-[9px] font-bold px-1.5 py-0.2 bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300 rounded" title={`Batas minimum: ${item.stokMinimum}`}>
+                                  Restock (≤{item.stokMinimum})
+                                </span>
+                              )}
+                            </div>
                           </td>
 
                           {/* Kategori */}
@@ -1983,7 +2091,7 @@ export default function App() {
                                 type="button"
                                 onClick={() => handleQuickDelta(item, -1)}
                                 className="w-6 h-6 rounded bg-white dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 flex items-center justify-center font-bold text-xs shadow-2xs transition-colors"
-                                title="Kurangi 1 pcs"
+                                title={`Kurangi 1 ${item.satuan || 'pcs'}`}
                               >
                                 -
                               </button>
@@ -1994,14 +2102,14 @@ export default function App() {
                                 className="px-2 py-0.5 font-mono font-bold text-sm text-slate-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
                                 title="Klik untuk edit cepat"
                               >
-                                {qty}
+                                {qty} <span className="text-[10px] font-normal text-slate-400">{item.satuan || 'pcs'}</span>
                               </button>
 
                               <button
                                 type="button"
                                 onClick={() => handleQuickDelta(item, 1)}
                                 className="w-6 h-6 rounded bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center font-bold text-xs shadow-2xs transition-colors"
-                                title="Tambah 1 pcs (+1)"
+                                title={`Tambah 1 ${item.satuan || 'pcs'} (+1)`}
                               >
                                 +
                               </button>
@@ -2020,9 +2128,9 @@ export default function App() {
                             </div>
                           </td>
 
-                          {/* Quantity Sistem */}
+                          {/* Quantity Sistem (stok_awal) */}
                           <td className="px-3.5 py-2 text-right font-mono text-slate-500 dark:text-slate-400 whitespace-nowrap">
-                            {sysQty} pcs
+                            {sysQty} {item.satuan || 'pcs'}
                           </td>
 
                           {/* Selisih */}
@@ -2030,25 +2138,23 @@ export default function App() {
                             {diff === 0 ? (
                               <span className="text-emerald-700 dark:text-emerald-400">0</span>
                             ) : diff < 0 ? (
-                              <span className="text-red-600 dark:text-red-400">{diff}</span>
+                              <span className="text-red-600 dark:text-red-400">{diff} {item.satuan || 'pcs'}</span>
                             ) : (
-                              <span className="text-blue-600 dark:text-blue-400">+{diff}</span>
+                              <span className="text-blue-600 dark:text-blue-400">+{diff} {item.satuan || 'pcs'}</span>
                             )}
                           </td>
 
-                          {/* Harga Modal */}
-                          <td className="px-3.5 py-2 text-right font-mono text-slate-700 dark:text-slate-300 whitespace-nowrap">
-                            {formatRupiah(item.hargaModal)}
+                          {/* Harga Modal & Jual */}
+                          <td className="px-3.5 py-2 text-right font-mono whitespace-nowrap">
+                            <span className="text-slate-800 dark:text-slate-200 block">{formatRupiah(item.hargaModal)}</span>
+                            {item.hargaJual ? (
+                              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 block">Jual: {formatRupiah(item.hargaJual)}</span>
+                            ) : null}
                           </td>
 
                           {/* Total Modal */}
                           <td className="px-3.5 py-2 text-right font-mono font-bold text-slate-900 dark:text-white whitespace-nowrap">
                             {formatRupiah(totalModal)}
-                          </td>
-
-                          {/* Keterangan */}
-                          <td className="px-3.5 py-2 text-slate-600 dark:text-slate-300 text-[11px] max-w-xs truncate">
-                            {item.keterangan || '-'}
                           </td>
 
                           {/* Petugas & Timestamp */}
@@ -2136,7 +2242,7 @@ export default function App() {
       {/* FOOTER */}
       <footer className="bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 mt-auto">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 dark:text-slate-400 gap-2">
-          <p>© 2026 MartOpname. Sistem Audit Stok & Modal Toko Mart Multi-User.</p>
+          <p>© 2026 DR MART. Sistem Audit Stok & Modal Toko Mart Multi-User.</p>
           <div className="flex items-center gap-4">
             <span className="font-mono">
               Hardware Scanner: <strong className="text-emerald-700 dark:text-emerald-400">Aktif (Auto-Detect USB/BT)</strong>
@@ -2334,6 +2440,39 @@ export default function App() {
         </div>
       )}
 
+      {/* 9.1 In-App Confirmation Dialog for Wipe All Demo Data */}
+      {isClearDemoModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="w-full max-w-sm bg-white dark:bg-slate-900 rounded-xl p-5 shadow-2xl border border-red-300 dark:border-red-900/80 space-y-3">
+            <h3 className="text-sm font-bold text-red-600 dark:text-red-400 flex items-center gap-2">
+              <Trash2 className="w-4 h-4" /> Hapus Seluruh Data Demo?
+            </h3>
+            <p className="text-xs text-slate-600 dark:text-slate-300">
+              Tindakan ini akan <strong>menghapus permanen seluruh data barang demo ({items.length} item)</strong> dari Firebase Cloud Firestore.
+            </p>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              Katalog barang toko mart Anda akan menjadi 0 item, bersih dan siap untuk Anda isi dengan data barang riil atau import dari file Excel (.xlsx).
+            </p>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsClearDemoModalOpen(false)}
+                className="px-3 py-1.5 text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white rounded-lg"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={executeClearAllDemoData}
+                className="px-4 py-1.5 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 rounded-lg shadow-xs"
+              >
+                Ya, Hapus Semua Data Demo
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 10. Opname Date & Session Info Modal */}
       <OpnameDateModal
         isOpen={isOpnameDateModalOpen}
@@ -2399,6 +2538,7 @@ export default function App() {
         onOpenUserModal={() => setIsUserModalOpen(true)}
         onOpenDisplayOptions={() => setIsDisplayMenuOpen(true)}
         onResetSession={handleResetSession}
+        onClearDemoData={() => setIsClearDemoModalOpen(true)}
         onSelectTab={setActiveViewTab}
         showResetButton={showResetButton}
       />

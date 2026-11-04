@@ -4,7 +4,8 @@ import path from 'path';
 import { defineConfig } from 'vite';
 
 export default defineConfig({
-  base: '/',
+  // Relative base './' allows app to run flawlessly on GitHub Pages subpaths (/repo-name/) as well as root domains
+  base: './',
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {

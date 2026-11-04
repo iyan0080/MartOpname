@@ -14,6 +14,7 @@ import {
   BadgePercent,
   Receipt,
   Layers,
+  Download,
 } from 'lucide-react';
 import {
   InventoryItem,
@@ -22,6 +23,7 @@ import {
   FinanceRecord,
 } from '../types/inventory.ts';
 import { formatRupiah, exportLaporanHasilOpnameKomprehensif } from '../utils/excelUtils.ts';
+import { generateBeritaAcaraPDF } from '../utils/pdfUtils.ts';
 
 interface LaporanHasilOpnameModalProps {
   isOpen: boolean;
@@ -76,6 +78,11 @@ export const LaporanHasilOpnameModal: React.FC<LaporanHasilOpnameModalProps> = (
     exportLaporanHasilOpnameKomprehensif(items, stats, session, finance);
   };
 
+  // Download Berita Acara PDF menggunakan jsPDF library
+  const handleDownloadPDF = () => {
+    generateBeritaAcaraPDF(session, stats, finance, items);
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
       <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-4xl w-full border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col my-auto max-h-[95vh]">
@@ -96,14 +103,15 @@ export const LaporanHasilOpnameModal: React.FC<LaporanHasilOpnameModalProps> = (
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Tombol Cetak Dokumen PDF Resmi menggunakan Library jsPDF */}
             <button
               type="button"
-              onClick={handlePrint}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 rounded-lg text-xs font-semibold transition-colors"
-              title="Cetak Laporan ke PDF/Kertas"
+              onClick={handleDownloadPDF}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white rounded-lg text-xs font-semibold shadow-xs transition-all cursor-pointer"
+              title="Download Berita Acara Resmi Format PDF (A4) untuk Arsip Fisik Toko"
             >
-              <Printer className="w-4 h-4 text-slate-600 dark:text-slate-300" />
-              <span>Cetak / PDF</span>
+              <Download className="w-4 h-4" />
+              <span>Cetak Berita Acara (PDF)</span>
             </button>
             <button
               type="button"
@@ -113,6 +121,15 @@ export const LaporanHasilOpnameModal: React.FC<LaporanHasilOpnameModalProps> = (
             >
               <FileSpreadsheet className="w-4 h-4" />
               <span>Unduh Excel</span>
+            </button>
+            <button
+              type="button"
+              onClick={handlePrint}
+              className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 rounded-lg text-xs font-semibold transition-colors"
+              title="Print Langsung ke Printer Browser"
+            >
+              <Printer className="w-4 h-4 text-slate-600 dark:text-slate-300" />
+              <span>Print</span>
             </button>
             <button
               type="button"
@@ -131,7 +148,7 @@ export const LaporanHasilOpnameModal: React.FC<LaporanHasilOpnameModalProps> = (
             <div className="flex items-center justify-center gap-2">
               <Building className="w-6 h-6 text-blue-600" />
               <h1 className="text-xl sm:text-2xl font-black uppercase tracking-wider text-slate-900 dark:text-white">
-                MARTOPNAME - SISTEM AUDIT INVENTARIS MART
+                DR MART - SISTEM AUDIT INVENTARIS TOKO
               </h1>
             </div>
             <h2 className="text-sm sm:text-base font-bold text-slate-700 dark:text-slate-300">

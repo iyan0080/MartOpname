@@ -1,13 +1,20 @@
+export type ProductStatus = 'AKTIF' | 'NONAKTIF' | 'ARSIP';
+
 export interface InventoryItem {
   id: string;
   sku: string;
-  namaBarang: string;
+  namaBarang: string; // nama_produk
   barcode: string;
   kategori: string;
+  satuan?: string; // satuan (pcs/box)
+  hargaModal: number; // harga_modal (Rp)
+  hargaJual?: number; // harga_jual (Rp)
   quantity: number; // Stok Fisik hasil opname
-  quantitySystem: number; // Stok Sistem / Buku
-  hargaModal: number; // Harga modal per pcs (Rp)
-  keterangan: string; // Catatan rak / expired / kondisi
+  quantitySystem: number; // Stok Sistem / Buku (stok_awal)
+  stokAwal?: number; // stok_awal
+  stokMinimum?: number; // stok_minumum / peringatan restock
+  status?: ProductStatus; // status (AKTIF / NONAKTIF / ARSIP)
+  keterangan?: string; // catatan (opsional)
   lastUpdatedBy: string; // Nama user terakhir yang scan/ubah
   updatedAt: string; // ISO date string
 }

@@ -26,9 +26,13 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
   const [namaBarang, setNamaBarang] = useState('');
   const [barcode, setBarcode] = useState('');
   const [kategori, setKategori] = useState('Sembako');
+  const [satuan, setSatuan] = useState('pcs');
   const [quantity, setQuantity] = useState<number | ''>(0);
   const [quantitySystem, setQuantitySystem] = useState<number | ''>(0);
   const [hargaModal, setHargaModal] = useState<number | ''>(0);
+  const [hargaJual, setHargaJual] = useState<number | ''>(0);
+  const [stokMinimum, setStokMinimum] = useState<number | ''>(5);
+  const [status, setStatus] = useState<'AKTIF' | 'NONAKTIF' | 'ARSIP'>('AKTIF');
   const [keterangan, setKeterangan] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -40,18 +44,26 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
       setNamaBarang(initialData.namaBarang || '');
       setBarcode(initialData.barcode || '');
       setKategori(initialData.kategori || 'Sembako');
+      setSatuan(initialData.satuan || 'pcs');
       setQuantity(initialData.quantity !== undefined ? initialData.quantity : 0);
       setQuantitySystem(initialData.quantitySystem !== undefined ? initialData.quantitySystem : 0);
       setHargaModal(initialData.hargaModal !== undefined ? initialData.hargaModal : 0);
+      setHargaJual(initialData.hargaJual !== undefined ? initialData.hargaJual : 0);
+      setStokMinimum(initialData.stokMinimum !== undefined ? initialData.stokMinimum : 5);
+      setStatus(initialData.status || 'AKTIF');
       setKeterangan(initialData.keterangan || '');
     } else {
       setSku('');
       setNamaBarang('');
       setBarcode(prefilledBarcode || '');
       setKategori('Sembako');
+      setSatuan('pcs');
       setQuantity(1);
       setQuantitySystem(1);
       setHargaModal(0);
+      setHargaJual(0);
+      setStokMinimum(5);
+      setStatus('AKTIF');
       setKeterangan('');
     }
     setError(null);
@@ -61,7 +73,9 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
 
   const numQty = typeof quantity === 'number' ? quantity : 0;
   const numModal = typeof hargaModal === 'number' ? hargaModal : 0;
+  const numJual = typeof hargaJual === 'number' ? hargaJual : 0;
   const numSysQty = typeof quantitySystem === 'number' ? quantitySystem : 0;
+  const numMinStok = typeof stokMinimum === 'number' ? stokMinimum : 0;
   const totalModalItem = numQty * numModal;
   const selisihQty = numQty - numSysQty;
 
@@ -72,7 +86,7 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
       return;
     }
     if (!namaBarang.trim()) {
-      setError('Nama Barang wajib diisi.');
+      setError('nama_produk wajib diisi.');
       return;
     }
 
@@ -85,9 +99,14 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
       namaBarang: namaBarang.trim(),
       barcode: barcode.trim(),
       kategori,
+      satuan: satuan.trim() || 'pcs',
       quantity: Math.max(0, numQty),
       quantitySystem: Math.max(0, numSysQty),
+      stokAwal: Math.max(0, numSysQty),
+      stokMinimum: Math.max(0, numMinStok),
       hargaModal: Math.max(0, numModal),
+      hargaJual: Math.max(0, numJual),
+      status,
       keterangan: keterangan.trim(),
       lastUpdatedBy: activeUser,
     });
@@ -175,8 +194,8 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
               />
             </div>
 
+            {/* Kategori & Satuan */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* Kategori */}
               <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                   Kategori
@@ -195,7 +214,37 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
                 </select>
               </div>
 
-              {/* Harga Modal */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Satuan (pcs / box / pack)
+                </label>
+                <div className="flex gap-2">
+                  <select
+                    value={satuan === 'pcs' || satuan === 'box' || satuan === 'pack' || satuan === 'dus' || satuan === 'botol' ? satuan : 'lainnya'}
+                    onChange={(e) => {
+                      if (e.target.value !== 'lainnya') setSatuan(e.target.value);
+                    }}
+                    className="w-32 px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-500 font-medium"
+                  >
+                    <option value="pcs">pcs</option>
+                    <option value="box">box / dus</option>
+                    <option value="pack">pack</option>
+                    <option value="botol">botol</option>
+                    <option value="lainnya">Lainnya...</option>
+                  </select>
+                  <input
+                    type="text"
+                    value={satuan}
+                    onChange={(e) => setSatuan(e.target.value.toLowerCase())}
+                    placeholder="satuan"
+                    className="flex-1 px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-500 font-mono"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Harga Modal & Harga Jual */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                   Harga Modal per Unit (Rp) <span className="text-red-500">*</span>
@@ -212,14 +261,31 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
                 />
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 font-mono">{formatRupiah(numModal)}</p>
               </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Harga Jual per Unit (Rp)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="100"
+                  value={hargaJual}
+                  onChange={(e) => setHargaJual(e.target.value === '' ? '' : Number(e.target.value))}
+                  placeholder="0"
+                  className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-500 font-mono"
+                />
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 font-mono">{formatRupiah(numJual)}</p>
+              </div>
             </div>
 
+            {/* Stok Fisik & Stok Awal (Sistem) */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {/* Quantity Fisik with Calculator Action */}
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                    Quantity Fisik (Opname)
+                    Stok Fisik Opname ({satuan})
                   </label>
                   <button
                     type="button"
@@ -249,10 +315,10 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
                 </div>
               </div>
 
-              {/* Quantity Sistem */}
+              {/* Quantity Sistem (stok_awal) */}
               <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Quantity Sistem / Buku
+                  Stok Awal / Buku Sistem ({satuan})
                 </label>
                 <input
                   type="number"
@@ -265,18 +331,37 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
               </div>
             </div>
 
-            {/* Keterangan */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                Keterangan / Lokasi Rak / Kondisi
-              </label>
-              <input
-                type="text"
-                value={keterangan}
-                onChange={(e) => setKeterangan(e.target.value)}
-                placeholder="Contoh: Rak Depan A1, Expired 12/2026, 1 Pcs Penyok"
-                className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-500"
-              />
+            {/* Stok Minimum & Status Produk */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Stok Minimum Peringatan (stok_minumum)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  value={stokMinimum}
+                  onChange={(e) => setStokMinimum(e.target.value === '' ? '' : Number(e.target.value))}
+                  placeholder="5"
+                  className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-500 font-mono"
+                />
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">Batas peringatan restock barang saat stok menipis</p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Status Produk
+                </label>
+                <select
+                  value={status}
+                  onChange={(e) => setStatus(e.target.value as 'AKTIF' | 'NONAKTIF' | 'ARSIP')}
+                  className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-500 font-semibold"
+                >
+                  <option value="AKTIF">AKTIF (Dijual di Mart)</option>
+                  <option value="NONAKTIF">NONAKTIF (Sementara Habis/Ditutup)</option>
+                  <option value="ARSIP">ARSIP (Tidak Dijual Lagi)</option>
+                </select>
+              </div>
             </div>
 
             {/* Real-time Calculation Summary Box */}

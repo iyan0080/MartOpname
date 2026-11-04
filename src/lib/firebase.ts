@@ -169,8 +169,27 @@ export async function batchSaveItemsToFirestore(items: InventoryItem[]): Promise
     handleFirestoreError(error, OperationType.WRITE, path);
   }
 }
+// Clear all inventory items from Firestore (wipe demo items or full reset)
+export async function clearAllItemsFromFirestore(): Promise<void> {
+  const path = 'items';
+  try {
+    const snap = await getDocs(collection(db, path));
+    if (snap.empty) return;
+    const docs = snap.docs;
+    const CHUNK_SIZE = 400;
+    for (let i = 0; i < docs.length; i += CHUNK_SIZE) {
+      const chunk = docs.slice(i, i + CHUNK_SIZE);
+      const batch = writeBatch(db);
+      chunk.forEach((d) => {
+        batch.delete(d.ref);
+      });
+      await batch.commit();
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
 
-// Subscribe to real-time item changes in Firestore
 export function subscribeToFirestoreItems(
   onUpdate: (items: InventoryItem[]) => void,
   onError?: (err: Error) => void

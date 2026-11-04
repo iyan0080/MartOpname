@@ -16,6 +16,7 @@ import {
   ChevronRight,
   ShieldCheck,
   Store,
+  Trash2,
 } from 'lucide-react';
 import { OpnameSession } from '../types/inventory.ts';
 
@@ -34,6 +35,7 @@ interface MobileMenuSheetProps {
   onOpenUserModal: () => void;
   onOpenDisplayOptions: () => void;
   onResetSession: () => void;
+  onClearDemoData?: () => void;
   onSelectTab: (tab: 'opname' | 'laporan' | 'kategori') => void;
   showResetButton: boolean;
 }
@@ -53,6 +55,7 @@ export const MobileMenuSheet: React.FC<MobileMenuSheetProps> = ({
   onOpenUserModal,
   onOpenDisplayOptions,
   onResetSession,
+  onClearDemoData,
   onSelectTab,
   showResetButton,
 }) => {
@@ -85,7 +88,7 @@ export const MobileMenuSheet: React.FC<MobileMenuSheetProps> = ({
             </div>
             <div>
               <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">
-                Menu & Aksi MartOpname
+                Menu & Aksi DR MART
               </h3>
               <p className="text-[11px] text-slate-500">
                 Petugas: <strong className="text-slate-800 dark:text-slate-200">{activeUser}</strong> • Tgl: {session.opnameDate || 'Hari ini'}
@@ -330,15 +333,39 @@ export const MobileMenuSheet: React.FC<MobileMenuSheetProps> = ({
               <button
                 type="button"
                 onClick={() => handleAction(onResetSession)}
-                className="w-full p-2.5 rounded-xl bg-red-50/70 dark:bg-red-950/30 hover:bg-red-100 dark:hover:bg-red-900/40 border border-red-200 dark:border-red-900/50 flex items-center justify-between transition-colors text-left text-red-700 dark:text-red-400"
+                className="w-full p-2.5 rounded-xl bg-amber-50/70 dark:bg-amber-950/30 hover:bg-amber-100 dark:hover:bg-amber-900/40 border border-amber-200 dark:border-amber-900/50 flex items-center justify-between transition-colors text-left text-amber-700 dark:text-amber-400"
               >
                 <div className="flex items-center gap-3">
-                  <div className="p-2 bg-red-100 dark:bg-red-900/50 text-red-600 dark:text-red-300 rounded-lg">
+                  <div className="p-2 bg-amber-100 dark:bg-amber-900/50 text-amber-600 dark:text-amber-300 rounded-lg">
                     <RotateCcw className="w-4 h-4" />
                   </div>
                   <span className="text-xs font-semibold">
                     Reset Semua Stok Fisik (Sesi Baru)
                   </span>
+                </div>
+                <ChevronRight className="w-4 h-4 text-amber-400 shrink-0" />
+              </button>
+            )}
+
+            {/* Hapus Semua Data Demo / Kosongkan Barang */}
+            {onClearDemoData && (
+              <button
+                type="button"
+                onClick={() => handleAction(onClearDemoData)}
+                className="w-full p-2.5 rounded-xl bg-red-50/70 dark:bg-red-950/30 hover:bg-red-100 dark:hover:bg-red-900/40 border border-red-200 dark:border-red-900/50 flex items-center justify-between transition-colors text-left text-red-700 dark:text-red-400"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-red-100 dark:bg-red-900/50 text-red-600 dark:text-red-300 rounded-lg">
+                    <Trash2 className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <span className="text-xs font-semibold block">
+                      Hapus Semua Data Demo (0 Barang)
+                    </span>
+                    <span className="text-[10px] text-red-500/80">
+                      Kosongkan seluruh barang untuk persiapan toko riil
+                    </span>
+                  </div>
                 </div>
                 <ChevronRight className="w-4 h-4 text-red-400 shrink-0" />
               </button>
