@@ -1,7 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { X, Save, AlertCircle, Calculator } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { X, Save, AlertCircle, Calculator, Plus, ListFilter } from 'lucide-react';
 import { InventoryItem } from '../types/inventory.ts';
-import { CATEGORIES } from '../data/seedData.ts';
 import { formatRupiah } from '../utils/excelUtils.ts';
 import { QuantityCalculatorModal } from './QuantityCalculatorModal.tsx';
 
@@ -12,6 +11,7 @@ interface ItemFormModalProps {
   initialData?: InventoryItem | null;
   prefilledBarcode?: string;
   activeUser: string;
+  availableCategories?: string[];
 }
 
 export const ItemFormModal: React.FC<ItemFormModalProps> = ({
@@ -21,11 +21,14 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
   initialData,
   prefilledBarcode,
   activeUser,
+  availableCategories = [],
 }) => {
   const [sku, setSku] = useState('');
   const [namaBarang, setNamaBarang] = useState('');
   const [barcode, setBarcode] = useState('');
-  const [kategori, setKategori] = useState('Sembako');
+  const [kategori, setKategori] = useState('Umum');
+  const [isCustomCategory, setIsCustomCategory] = useState(false);
+  const [customCategoryName, setCustomCategoryName] = useState('');
   const [satuan, setSatuan] = useState('pcs');
   const [quantity, setQuantity] = useState<number | ''>(0);
   const [quantitySystem, setQuantitySystem] = useState<number | ''>(0);
@@ -38,12 +41,32 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCalcOpen, setIsCalcOpen] = useState(false);
 
+  // Compute dynamic category options combining imported categories and current item's category
+  const categoryOptions = useMemo(() => {
+    const list = new Set<string>();
+    (availableCategories || []).forEach((c) => {
+      const trimmed = (c || '').trim();
+      if (trimmed) list.add(trimmed);
+    });
+    if (initialData?.kategori && initialData.kategori.trim()) {
+      list.add(initialData.kategori.trim());
+    }
+    const arr = Array.from(list).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+    if (arr.length === 0) {
+      arr.push('Umum');
+    }
+    return arr;
+  }, [availableCategories, initialData]);
+
   useEffect(() => {
     if (initialData) {
       setSku(initialData.sku || '');
       setNamaBarang(initialData.namaBarang || '');
       setBarcode(initialData.barcode || '');
-      setKategori(initialData.kategori || 'Sembako');
+      const existingCat = (initialData.kategori || '').trim() || (availableCategories[0] || 'Umum');
+      setKategori(existingCat);
+      setIsCustomCategory(false);
+      setCustomCategoryName('');
       setSatuan(initialData.satuan || 'pcs');
       setQuantity(initialData.quantity !== undefined ? initialData.quantity : 0);
       setQuantitySystem(initialData.quantitySystem !== undefined ? initialData.quantitySystem : 0);
@@ -56,7 +79,10 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
       setSku('');
       setNamaBarang('');
       setBarcode(prefilledBarcode || '');
-      setKategori('Sembako');
+      const defaultCat = availableCategories[0] || 'Umum';
+      setKategori(defaultCat);
+      setIsCustomCategory(false);
+      setCustomCategoryName('');
       setSatuan('pcs');
       setQuantity(1);
       setQuantitySystem(1);
@@ -67,7 +93,7 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
       setKeterangan('');
     }
     setError(null);
-  }, [initialData, prefilledBarcode, isOpen]);
+  }, [initialData, prefilledBarcode, isOpen, availableCategories]);
 
   if (!isOpen) return null;
 
@@ -82,13 +108,17 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!sku.trim()) {
-      setError('SKU wajib diisi (contoh: SMB-001, MNM-002).');
+      setError('SKU wajib diisi (contoh: SKU-001, SMB-001).');
       return;
     }
     if (!namaBarang.trim()) {
       setError('nama_produk wajib diisi.');
       return;
     }
+
+    const finalCategory = isCustomCategory
+      ? customCategoryName.trim() || 'Umum'
+      : kategori.trim() || 'Umum';
 
     setIsSubmitting(true);
     setError(null);
@@ -98,7 +128,7 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
       sku: sku.trim().toUpperCase(),
       namaBarang: namaBarang.trim(),
       barcode: barcode.trim(),
-      kategori,
+      kategori: finalCategory,
       satuan: satuan.trim() || 'pcs',
       quantity: Math.max(0, numQty),
       quantitySystem: Math.max(0, numSysQty),
@@ -197,21 +227,67 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
             {/* Kategori & Satuan */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Kategori
-                </label>
-                <select
-                  value={kategori}
-                  onChange={(e) => setKategori(e.target.value)}
-                  className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-500"
-                >
-                  {CATEGORIES.filter((c) => c !== 'Semua Kategori').map((cat) => (
-                    <option key={cat} value={cat}>
-                      {cat}
-                    </option>
-                  ))}
-                  <option value="Lainnya">Lainnya</option>
-                </select>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    Kategori <span className="text-red-500">*</span>
+                  </label>
+                  {!isCustomCategory ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsCustomCategory(true);
+                        setCustomCategoryName('');
+                      }}
+                      className="text-[11px] font-semibold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 flex items-center gap-0.5"
+                    >
+                      <Plus className="w-3 h-3" /> Kategori Baru
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setIsCustomCategory(false)}
+                      className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 flex items-center gap-0.5"
+                    >
+                      <ListFilter className="w-3 h-3" /> Pilih Daftar
+                    </button>
+                  )}
+                </div>
+
+                {!isCustomCategory ? (
+                  <select
+                    value={kategori}
+                    onChange={(e) => {
+                      if (e.target.value === '__NEW__') {
+                        setIsCustomCategory(true);
+                        setCustomCategoryName('');
+                      } else {
+                        setKategori(e.target.value);
+                      }
+                    }}
+                    className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-500 font-medium"
+                  >
+                    {categoryOptions.map((cat) => (
+                      <option key={cat} value={cat}>
+                        {cat}
+                      </option>
+                    ))}
+                    <option value="__NEW__">+ Tambah Kategori Baru...</option>
+                  </select>
+                ) : (
+                  <div className="space-y-1">
+                    <input
+                      type="text"
+                      value={customCategoryName}
+                      onChange={(e) => setCustomCategoryName(e.target.value)}
+                      placeholder="Ketik nama kategori baru..."
+                      className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-blue-500 dark:border-blue-500 text-slate-900 dark:text-white rounded-lg focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-500 font-medium"
+                      autoFocus
+                    />
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                      Kategori ini otomatis muncul di filter & laporan opname
+                    </p>
+                  </div>
+                )}
               </div>
 
               <div>

@@ -45,7 +45,7 @@ export function exportInventoryToXLSX(items: InventoryItem[], stats?: InventoryS
       item.sku,
       item.barcode || '',
       item.namaBarang,
-      item.kategori || 'Sembako',
+      item.kategori || 'Umum',
       satuanVal,
       modal,
       jual,
@@ -107,7 +107,7 @@ export function exportInventoryToXLSX(items: InventoryItem[], stats?: InventoryS
       item.sku,
       item.barcode || '-',
       item.namaBarang,
-      item.kategori || 'Sembako',
+      item.kategori || 'Umum',
       item.satuan || 'pcs',
       qty,
       sysQty,
@@ -288,8 +288,20 @@ export async function parseExcelFile(file: File): Promise<{
             normalized['BARANG'] ||
             '';
 
-          // 4. Kategori
-          const kategori = normalized['KATEGORI'] || normalized['CATEGORY'] || 'Sembako';
+          // 4. Kategori (mendukung berbagai nama kolom kategori toko mart)
+          const kategori =
+            normalized['KATEGORI'] ||
+            normalized['CATEGORY'] ||
+            normalized['DEPARTEMEN'] ||
+            normalized['DEPARTMENT'] ||
+            normalized['GOLONGAN'] ||
+            normalized['JENIS'] ||
+            normalized['JENISBARANG'] ||
+            normalized['KELOMPOK'] ||
+            normalized['GRUP'] ||
+            normalized['GROUP'] ||
+            normalized['TIPE'] ||
+            '';
 
           // 5. satuan (pcs/box)
           const rawSatuan = String(normalized['SATUANPCSBOX'] || normalized['SATUAN'] || normalized['UNIT'] || 'pcs').trim().toLowerCase();
@@ -354,7 +366,7 @@ export async function parseExcelFile(file: File): Promise<{
             sku: String(sku || `SKU-${idx + 1}`).trim().toUpperCase(),
             namaBarang: String(nama || 'Tanpa Nama').trim(),
             barcode: String(barcode).trim(),
-            kategori: String(kategori).trim() || 'Sembako',
+            kategori: String(kategori).trim() || 'Umum',
             satuan,
             hargaModal: Math.max(0, isNaN(modal) ? 0 : modal),
             hargaJual: Math.max(0, isNaN(jual) ? 0 : jual),

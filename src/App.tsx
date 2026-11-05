@@ -708,7 +708,7 @@ export default function App() {
           sku: (itemData.sku || existing?.sku || '').trim().toUpperCase(),
           namaBarang: (itemData.namaBarang || existing?.namaBarang || '').trim(),
           barcode: (itemData.barcode !== undefined ? itemData.barcode : existing?.barcode || '').trim(),
-          kategori: itemData.kategori || existing?.kategori || 'Sembako',
+          kategori: itemData.kategori || existing?.kategori || 'Umum',
           satuan: itemData.satuan || existing?.satuan || 'pcs',
           quantity: newQty,
           quantitySystem: itemData.quantitySystem !== undefined ? Number(itemData.quantitySystem) : (existing?.quantitySystem || 0),
@@ -755,7 +755,7 @@ export default function App() {
           sku: cleanSku,
           namaBarang: (itemData.namaBarang || 'Barang Baru').trim(),
           barcode: (itemData.barcode || '').trim(),
-          kategori: itemData.kategori || 'Sembako',
+          kategori: itemData.kategori || 'Umum',
           satuan: itemData.satuan || 'pcs',
           quantity: Math.max(0, Number(itemData.quantity) || 0),
           quantitySystem: Math.max(0, Number(itemData.quantitySystem) || 0),
@@ -931,7 +931,7 @@ export default function App() {
           sku: String(raw.sku || `SKU-${idx + 1}`).trim().toUpperCase(),
           namaBarang: String(raw.namaBarang || 'Barang Tanpa Nama').trim(),
           barcode: String(raw.barcode || '').trim(),
-          kategori: String(raw.kategori || 'Sembako').trim(),
+          kategori: String(raw.kategori || 'Umum').trim(),
           satuan: String(raw.satuan || 'pcs').trim(),
           quantity: Math.max(0, Number(raw.quantity !== undefined ? raw.quantity : raw.stokAwal) || 0),
           quantitySystem: Math.max(0, Number(raw.quantitySystem !== undefined ? raw.quantitySystem : (raw.stokAwal !== undefined ? raw.stokAwal : raw.quantity)) || 0),
@@ -981,7 +981,7 @@ export default function App() {
               sku: rawSku || `SKU-${Date.now().toString().slice(-4)}-${idx}`,
               namaBarang: String(raw.namaBarang || 'Barang Baru').trim(),
               barcode: rawBarcode || `BAR-${Date.now().toString().slice(-6)}-${idx}`,
-              kategori: String(raw.kategori || 'Sembako').trim(),
+              kategori: String(raw.kategori || 'Umum').trim(),
               satuan: String(raw.satuan || 'pcs').trim(),
               quantity: Math.max(0, Number(raw.quantity !== undefined ? raw.quantity : raw.stokAwal) || 0),
               quantitySystem: Math.max(0, Number(raw.quantitySystem !== undefined ? raw.quantitySystem : (raw.stokAwal !== undefined ? raw.stokAwal : raw.quantity)) || 0),
@@ -1121,7 +1121,7 @@ export default function App() {
         }
 
         // Category filter
-        if (selectedCategory !== 'ALL' && item.kategori !== selectedCategory) {
+        if (selectedCategory !== 'ALL' && (item.kategori || '').trim() !== selectedCategory) {
           return false;
         }
 
@@ -1153,11 +1153,34 @@ export default function App() {
       });
   }, [items, searchQuery, searchMode, selectedCategory, discrepancyFilter, sortBy, sortOrder]);
 
-  // Unique categories list
+  // Unique categories list dynamically derived from imported items
   const availableCategories = useMemo(() => {
-    const set = new Set(items.map((i) => i.kategori).filter(Boolean));
-    return Array.from(set);
+    const set = new Set<string>();
+    items.forEach((i) => {
+      const cat = (i.kategori || '').trim();
+      if (cat) {
+        set.add(cat);
+      }
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
   }, [items]);
+
+  // Item counts per category for the filter dropdown
+  const categoryCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    items.forEach((i) => {
+      const cat = (i.kategori || '').trim() || 'Umum';
+      counts[cat] = (counts[cat] || 0) + 1;
+    });
+    return counts;
+  }, [items]);
+
+  // Auto-reset category filter if the active category is no longer in imported items
+  useEffect(() => {
+    if (selectedCategory !== 'ALL' && availableCategories.length > 0 && !availableCategories.includes(selectedCategory)) {
+      setSelectedCategory('ALL');
+    }
+  }, [availableCategories, selectedCategory]);
 
   // Current active user object
   const currentUserObj = users.find((u) => u.name === activeUser) || users[0];
@@ -1895,12 +1918,12 @@ export default function App() {
                 <select
                   value={selectedCategory}
                   onChange={(e) => setSelectedCategory(e.target.value)}
-                  className="w-full sm:w-auto px-2.5 py-1.5 text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-200 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                  className="w-full sm:w-auto px-2.5 py-1.5 text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-200 focus:outline-hidden focus:ring-2 focus:ring-blue-500 font-medium"
                 >
                   <option value="ALL">Semua Kategori ({items.length})</option>
                   {availableCategories.map((c) => (
                     <option key={c} value={c}>
-                      {c}
+                      {c} ({categoryCounts[c] || 0})
                     </option>
                   ))}
                 </select>
@@ -2396,6 +2419,7 @@ export default function App() {
         initialData={editingItem}
         prefilledBarcode={prefilledBarcode}
         activeUser={activeUser}
+        availableCategories={availableCategories}
       />
 
       {/* 3. User Management Modal */}
