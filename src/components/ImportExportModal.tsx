@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   X,
   FileSpreadsheet,
   Download,
   Upload,
   AlertCircle,
+  AlertTriangle,
   CheckCircle2,
   FileText,
   ArrowRight,
@@ -62,6 +63,35 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
   if (!isOpen) return null;
 
   const isUserIyan = activeUser === 'IYAN' && isAuthorizedIyan;
+
+  // Analysis of duplicate SKUs & Barcodes in parsedPreview
+  const duplicateSkusInImport = useMemo(() => {
+    if (!parsedPreview) return new Map<string, number>();
+    const counts = new Map<string, number>();
+    parsedPreview.forEach((item) => {
+      const s = (item.sku || '').trim().toUpperCase();
+      if (s) counts.set(s, (counts.get(s) || 0) + 1);
+    });
+    const dupes = new Map<string, number>();
+    counts.forEach((cnt, s) => {
+      if (cnt > 1) dupes.set(s, cnt);
+    });
+    return dupes;
+  }, [parsedPreview]);
+
+  const duplicateBarcodesInImport = useMemo(() => {
+    if (!parsedPreview) return new Map<string, number>();
+    const counts = new Map<string, number>();
+    parsedPreview.forEach((item) => {
+      const b = (item.barcode || '').trim();
+      if (b && b !== '-' && b !== '0') counts.set(b, (counts.get(b) || 0) + 1);
+    });
+    const dupes = new Map<string, number>();
+    counts.forEach((cnt, b) => {
+      if (cnt > 1) dupes.set(b, cnt);
+    });
+    return dupes;
+  }, [parsedPreview]);
 
   const handleFileChange = async (file: File) => {
     if (!file) return;
@@ -384,6 +414,27 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
                         </div>
                       </div>
 
+                      {/* Duplicate Alert Banner */}
+                      {(duplicateSkusInImport.size > 0 || duplicateBarcodesInImport.size > 0) && (
+                        <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/80 rounded-lg text-xs space-y-1">
+                          <div className="flex items-center gap-1.5 font-bold text-amber-900 dark:text-amber-200">
+                            <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                            <span>Peringatan Data Ganda Dalam File Excel:</span>
+                          </div>
+                          <div className="text-[11px] text-amber-800 dark:text-amber-300 pl-5 space-y-0.5">
+                            {duplicateSkusInImport.size > 0 && (
+                              <p>• Ditemukan <b>{duplicateSkusInImport.size} SKU</b> yang muncul ganda/berulang dalam file ini.</p>
+                            )}
+                            {duplicateBarcodesInImport.size > 0 && (
+                              <p>• Ditemukan <b>{duplicateBarcodesInImport.size} Barcode</b> yang sama digunakan oleh beberapa barang dalam file ini.</p>
+                            )}
+                            <p className="text-slate-500 dark:text-slate-400 mt-1">
+                              Jika memilih metode &quot;Gabungkan&quot;, baris terakhir dengan SKU/Barcode yang sama akan menimpa data sebelumnya.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
                       {/* Preview Table */}
                       <div className="border border-slate-200 dark:border-slate-700 rounded-lg overflow-x-auto max-h-52">
                         <table className="w-full text-[11px] text-left">
@@ -403,11 +454,32 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-mono">
-                            {parsedPreview.slice(0, 10).map((row, idx) => (
-                              <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/60">
-                                <td className="px-2.5 py-1 font-bold text-slate-800 dark:text-slate-200">{row.sku}</td>
-                                <td className="px-2.5 py-1 text-slate-600 dark:text-slate-400">{row.barcode || '-'}</td>
-                                <td className="px-2.5 py-1 font-sans text-slate-900 dark:text-white font-medium">{row.namaBarang}</td>
+                            {parsedPreview.slice(0, 10).map((row, idx) => {
+                              const isSkuDup = duplicateSkusInImport.has((row.sku || '').trim().toUpperCase());
+                              const isBarcodeDup = Boolean(row.barcode && duplicateBarcodesInImport.has(row.barcode.trim()));
+                              return (
+                                <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/60">
+                                  <td className="px-2.5 py-1 font-bold text-slate-800 dark:text-slate-200">
+                                    <div className="flex items-center gap-1">
+                                      <span>{row.sku}</span>
+                                      {isSkuDup && (
+                                        <span className="text-[9px] px-1 py-0.2 rounded bg-amber-500/20 text-amber-700 dark:text-amber-300 font-sans font-bold">
+                                          Ganda
+                                        </span>
+                                      )}
+                                    </div>
+                                  </td>
+                                  <td className="px-2.5 py-1 text-slate-600 dark:text-slate-400">
+                                    <div className="flex items-center gap-1">
+                                      <span>{row.barcode || '-'}</span>
+                                      {isBarcodeDup && (
+                                        <span className="text-[9px] px-1 py-0.2 rounded bg-rose-500/20 text-rose-700 dark:text-rose-300 font-sans font-bold">
+                                          Ganda
+                                        </span>
+                                      )}
+                                    </div>
+                                  </td>
+                                  <td className="px-2.5 py-1 font-sans text-slate-900 dark:text-white font-medium">{row.namaBarang}</td>
                                 <td className="px-2.5 py-1 font-sans text-slate-600 dark:text-slate-400">{row.kategori}</td>
                                 <td className="px-2.5 py-1 text-slate-700 dark:text-slate-300">{row.satuan || 'pcs'}</td>
                                 <td className="px-2.5 py-1 text-right text-slate-800 dark:text-slate-200">
@@ -439,7 +511,8 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
                                   {row.keterangan || '-'}
                                 </td>
                               </tr>
-                            ))}
+                            );
+                          })}
                           </tbody>
                         </table>
                       </div>

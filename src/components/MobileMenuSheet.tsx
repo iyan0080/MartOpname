@@ -17,6 +17,7 @@ import {
   ShieldCheck,
   Store,
   Trash2,
+  AlertTriangle,
 } from 'lucide-react';
 import { OpnameSession } from '../types/inventory.ts';
 
@@ -38,6 +39,8 @@ interface MobileMenuSheetProps {
   onClearDemoData?: () => void;
   onSelectTab: (tab: 'opname' | 'laporan' | 'kategori') => void;
   showResetButton: boolean;
+  onOpenDuplicateModal?: () => void;
+  duplicateCount?: number;
 }
 
 export const MobileMenuSheet: React.FC<MobileMenuSheetProps> = ({
@@ -58,6 +61,8 @@ export const MobileMenuSheet: React.FC<MobileMenuSheetProps> = ({
   onClearDemoData,
   onSelectTab,
   showResetButton,
+  onOpenDuplicateModal,
+  duplicateCount = 0,
 }) => {
   if (!isOpen) return null;
 
@@ -247,6 +252,47 @@ export const MobileMenuSheet: React.FC<MobileMenuSheetProps> = ({
               </div>
               <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
             </button>
+
+            {/* Cek SKU & Barcode Ganda */}
+            {onOpenDuplicateModal && (
+              <button
+                type="button"
+                onClick={() => handleAction(onOpenDuplicateModal)}
+                className={`w-full p-2.5 rounded-xl border flex items-center justify-between transition-colors text-left ${
+                  duplicateCount > 0
+                    ? 'bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/30'
+                    : 'bg-slate-50 dark:bg-slate-800/60 hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-200 dark:border-slate-700'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className={`p-2 rounded-lg ${
+                    duplicateCount > 0
+                      ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400'
+                      : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200'
+                  }`}>
+                    <AlertTriangle className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                        Cek SKU & Barcode Ganda
+                      </span>
+                      {duplicateCount > 0 && (
+                        <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-amber-600 text-white font-mono font-bold">
+                          {duplicateCount}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-slate-500">
+                      {duplicateCount > 0
+                        ? `${duplicateCount} barang terdeteksi duplikat`
+                        : 'Semua SKU & Barcode aman dan unik'}
+                    </p>
+                  </div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
+              </button>
+            )}
           </div>
 
           {/* GROUP 3: OPERASIONAL & PENGATURAN */}

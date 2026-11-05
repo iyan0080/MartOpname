@@ -12,6 +12,7 @@ interface ItemFormModalProps {
   prefilledBarcode?: string;
   activeUser: string;
   availableCategories?: string[];
+  allItems?: InventoryItem[];
 }
 
 export const ItemFormModal: React.FC<ItemFormModalProps> = ({
@@ -22,6 +23,7 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
   prefilledBarcode,
   activeUser,
   availableCategories = [],
+  allItems = [],
 }) => {
   const [sku, setSku] = useState('');
   const [namaBarang, setNamaBarang] = useState('');
@@ -40,6 +42,24 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCalcOpen, setIsCalcOpen] = useState(false);
+
+  // Check real-time duplicate SKU
+  const duplicateSkuItem = useMemo(() => {
+    const s = sku.trim().toUpperCase();
+    if (!s) return null;
+    return allItems.find(
+      (item) => item.sku.trim().toUpperCase() === s && item.id !== initialData?.id
+    ) || null;
+  }, [sku, allItems, initialData]);
+
+  // Check real-time duplicate Barcode
+  const duplicateBarcodeItem = useMemo(() => {
+    const b = barcode.trim();
+    if (!b || b === '-' || b === '0') return null;
+    return allItems.find(
+      (item) => item.barcode && item.barcode.trim() === b && item.id !== initialData?.id
+    ) || null;
+  }, [barcode, allItems, initialData]);
 
   // Compute dynamic category options combining imported categories and current item's category
   const categoryOptions = useMemo(() => {
@@ -189,9 +209,21 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
                   value={sku}
                   onChange={(e) => setSku(e.target.value.toUpperCase())}
                   placeholder="Contoh: SMB-005"
-                  className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-500 font-mono font-semibold"
+                  className={`w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border rounded-lg focus:bg-white dark:focus:bg-slate-800 focus:ring-2 font-mono font-semibold ${
+                    duplicateSkuItem
+                      ? 'border-amber-400 dark:border-amber-500 focus:ring-amber-500 text-amber-900 dark:text-amber-200'
+                      : 'border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white focus:ring-blue-500'
+                  }`}
                   required
                 />
+                {duplicateSkuItem && (
+                  <div className="mt-1 p-1.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded text-[11px] text-amber-800 dark:text-amber-300 flex items-start gap-1">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
+                    <span>
+                      <b>Perhatian:</b> SKU ini sudah dipakai oleh <b>{duplicateSkuItem.namaBarang}</b> (Stok: {duplicateSkuItem.quantity}).
+                    </span>
+                  </div>
+                )}
               </div>
 
               {/* Barcode */}
@@ -204,8 +236,20 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
                   value={barcode}
                   onChange={(e) => setBarcode(e.target.value)}
                   placeholder="Contoh: 8992388123456"
-                  className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-500 font-mono"
+                  className={`w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border rounded-lg focus:bg-white dark:focus:bg-slate-800 focus:ring-2 font-mono ${
+                    duplicateBarcodeItem
+                      ? 'border-rose-400 dark:border-rose-500 focus:ring-rose-500 text-rose-900 dark:text-rose-200'
+                      : 'border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white focus:ring-blue-500'
+                  }`}
                 />
+                {duplicateBarcodeItem && (
+                  <div className="mt-1 p-1.5 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 rounded text-[11px] text-rose-800 dark:text-rose-300 flex items-start gap-1">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0 text-rose-600 dark:text-rose-400 mt-0.5" />
+                    <span>
+                      <b>Perhatian:</b> Barcode ini sudah dipakai oleh <b>{duplicateBarcodeItem.namaBarang}</b> (SKU: {duplicateBarcodeItem.sku}).
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
 

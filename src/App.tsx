@@ -11,6 +11,7 @@ import {
   Activity,
   Layers,
   ArrowUpDown,
+  ArrowRight,
   TrendingDown,
   TrendingUp,
   CheckCircle,
@@ -73,6 +74,7 @@ import { PasswordPromptModal } from './components/PasswordPromptModal.tsx';
 import { OpnameDateModal } from './components/OpnameDateModal.tsx';
 import { FinanceManagerModal } from './components/FinanceManagerModal.tsx';
 import { LaporanHasilOpnameModal } from './components/LaporanHasilOpnameModal.tsx';
+import { DuplicateItemsModal } from './components/DuplicateItemsModal.tsx';
 import { MobileBottomDock } from './components/MobileBottomDock.tsx';
 import { MobileMenuSheet } from './components/MobileMenuSheet.tsx';
 import { FinancialTrendChart } from './components/FinancialTrendChart.tsx';
@@ -114,7 +116,7 @@ export default function App() {
   const [searchMode, setSearchMode] = useState<'barcode' | 'all'>('barcode');
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [selectedCategory, setSelectedCategory] = useState('ALL');
-  const [discrepancyFilter, setDiscrepancyFilter] = useState<'ALL' | 'MATCH' | 'MINUS' | 'PLUS' | 'UNCOUNTED'>('ALL');
+  const [discrepancyFilter, setDiscrepancyFilter] = useState<'ALL' | 'MATCH' | 'MINUS' | 'PLUS' | 'UNCOUNTED' | 'DUPLICATE'>('ALL');
   const [sortBy, setSortBy] = useState<'nama' | 'sku' | 'qty' | 'modal' | 'totalModal' | 'selisih'>('totalModal');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [activeViewTab, setActiveViewTab] = useState<'opname' | 'laporan' | 'kategori'>('opname');
@@ -122,6 +124,7 @@ export default function App() {
   // Modals state
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [isItemFormOpen, setIsItemFormOpen] = useState(false);
+  const [isDuplicateModalOpen, setIsDuplicateModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
   const [prefilledBarcode, setPrefilledBarcode] = useState('');
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
@@ -205,6 +208,7 @@ export default function App() {
     isMobileMenuOpen ||
     isScannerOpen ||
     isItemFormOpen ||
+    isDuplicateModalOpen ||
     isFinanceModalOpen ||
     isLaporanHasilOpnameOpen ||
     isImportExportOpen ||
@@ -230,6 +234,7 @@ export default function App() {
     setIsMobileMenuOpen(false);
     setIsScannerOpen(false);
     setIsItemFormOpen(false);
+    setIsDuplicateModalOpen(false);
     setIsFinanceModalOpen(false);
     setIsLaporanHasilOpnameOpen(false);
     setIsImportExportOpen(false);
@@ -507,11 +512,18 @@ export default function App() {
     const trimmed = code.trim();
     if (!trimmed) return;
 
-    const item = items.find(
+    const matchingItems = items.filter(
       (i) => (i.barcode && i.barcode.toLowerCase() === trimmed.toLowerCase()) || i.sku.toLowerCase() === trimmed.toLowerCase()
     );
+    const item = matchingItems[0];
 
     if (item) {
+      if (matchingItems.length > 1) {
+        showToast(
+          `⚠️ Perhatian: Kode "${trimmed}" ganda (${matchingItems.length} barang berbeda). Stok dicatat ke: ${item.namaBarang}`,
+          'alert'
+        );
+      }
       const prevQty = item.quantity || 0;
       const newQty = prevQty + 1;
       const now = new Date().toISOString();
@@ -529,7 +541,9 @@ export default function App() {
         return next;
       });
       if (soundEnabled) playScanSuccessSound();
-      showToast(`[Hardware Scanner] +1 ${item.namaBarang} (Total: ${newQty} pcs)`, 'success');
+      if (matchingItems.length === 1) {
+        showToast(`[Hardware Scanner] +1 ${item.namaBarang} (Total: ${newQty} pcs)`, 'success');
+      }
 
       const log: ScanAuditLog = {
         id: `log-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
@@ -569,9 +583,14 @@ export default function App() {
     const code = barcode.trim();
     if (!code) return { success: false };
 
-    const local = items.find(
+    const matching = items.filter(
       (i) => (i.barcode && i.barcode.toLowerCase() === code.toLowerCase()) || i.sku.toLowerCase() === code.toLowerCase()
     );
+    const local = matching[0];
+
+    if (matching.length > 1) {
+      showToast(`⚠️ Perhatian: Kode "${code}" terdeteksi ganda (${matching.length} barang berbeda)!`, 'alert');
+    }
 
     if (mode === 'calculator') {
       if (local) {
@@ -1098,6 +1117,56 @@ export default function App() {
     }
   };
 
+  // Analysis of duplicate SKUs and Barcodes across all items
+  const duplicateAnalysis = useMemo(() => {
+    const skuMap = new Map<string, InventoryItem[]>();
+    const barcodeMap = new Map<string, InventoryItem[]>();
+
+    items.forEach((item) => {
+      const s = (item.sku || '').trim().toUpperCase();
+      if (s) {
+        const list = skuMap.get(s) || [];
+        list.push(item);
+        skuMap.set(s, list);
+      }
+
+      const b = (item.barcode || '').trim();
+      if (b && b !== '-' && b !== '0') {
+        const list = barcodeMap.get(b) || [];
+        list.push(item);
+        barcodeMap.set(b, list);
+      }
+    });
+
+    const duplicateSkus = new Map<string, InventoryItem[]>();
+    skuMap.forEach((itemList, s) => {
+      if (itemList.length > 1) {
+        duplicateSkus.set(s, itemList);
+      }
+    });
+
+    const duplicateBarcodes = new Map<string, InventoryItem[]>();
+    barcodeMap.forEach((itemList, b) => {
+      if (itemList.length > 1) {
+        duplicateBarcodes.set(b, itemList);
+      }
+    });
+
+    const duplicateItemIds = new Set<string>();
+    duplicateSkus.forEach((list) => list.forEach((i) => duplicateItemIds.add(i.id)));
+    duplicateBarcodes.forEach((list) => list.forEach((i) => duplicateItemIds.add(i.id)));
+
+    return {
+      duplicateSkus,
+      duplicateBarcodes,
+      duplicateItemIds,
+      hasDuplicates: duplicateItemIds.size > 0,
+      totalDuplicateSkus: duplicateSkus.size,
+      totalDuplicateBarcodes: duplicateBarcodes.size,
+      totalAffectedItems: duplicateItemIds.size,
+    };
+  }, [items]);
+
   // Filtered & Sorted items
   const filteredItems = useMemo(() => {
     return items
@@ -1125,12 +1194,13 @@ export default function App() {
           return false;
         }
 
-        // Discrepancy filter
+        // Discrepancy & Duplicate filter
         const diff = (item.quantity || 0) - (item.quantitySystem || 0);
         if (discrepancyFilter === 'MATCH' && diff !== 0) return false;
         if (discrepancyFilter === 'MINUS' && diff >= 0) return false;
         if (discrepancyFilter === 'PLUS' && diff <= 0) return false;
         if (discrepancyFilter === 'UNCOUNTED' && (item.quantity || 0) > 0) return false;
+        if (discrepancyFilter === 'DUPLICATE' && !duplicateAnalysis.duplicateItemIds.has(item.id)) return false;
 
         return true;
       })
@@ -1151,7 +1221,7 @@ export default function App() {
         }
         return sortOrder === 'desc' ? -comp : comp;
       });
-  }, [items, searchQuery, searchMode, selectedCategory, discrepancyFilter, sortBy, sortOrder]);
+  }, [items, searchQuery, searchMode, selectedCategory, discrepancyFilter, sortBy, sortOrder, duplicateAnalysis]);
 
   // Unique categories list dynamically derived from imported items
   const availableCategories = useMemo(() => {
@@ -1875,6 +1945,59 @@ export default function App() {
           <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden">
             {/* Search, Filter & Quick Options Bar */}
             <div className="p-3 sm:p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/60 flex flex-col gap-2.5">
+              {/* Duplicate Warning Banner */}
+              {duplicateAnalysis.hasDuplicates && (
+                <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 transition-colors">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                      <AlertTriangle className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-amber-900 dark:text-amber-200 flex items-center gap-1.5 flex-wrap">
+                        <span>Peringatan Data Ganda:</span>
+                        {duplicateAnalysis.totalDuplicateSkus > 0 && (
+                          <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-800 dark:text-amber-300 font-mono">
+                            {duplicateAnalysis.totalDuplicateSkus} SKU Ganda
+                          </span>
+                        )}
+                        {duplicateAnalysis.totalDuplicateBarcodes > 0 && (
+                          <span className="px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-800 dark:text-rose-300 font-mono">
+                            {duplicateAnalysis.totalDuplicateBarcodes} Barcode Ganda
+                          </span>
+                        )}
+                        <span className="text-slate-500 dark:text-slate-400 font-normal">
+                          ({duplicateAnalysis.totalAffectedItems} barang terdampak)
+                        </span>
+                      </p>
+                      <p className="text-[11px] text-amber-800/80 dark:text-amber-300/80 mt-0.5">
+                        SKU atau barcode ganda dapat menyebabkan kesalahan pencatatan stok saat scan kasir/opname.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                    <button
+                      type="button"
+                      onClick={() => setDiscrepancyFilter((prev) => (prev === 'DUPLICATE' ? 'ALL' : 'DUPLICATE'))}
+                      className={`px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors ${
+                        discrepancyFilter === 'DUPLICATE'
+                          ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
+                          : 'bg-white dark:bg-slate-800 text-amber-800 dark:text-amber-300 border-amber-300 dark:border-amber-700/80 hover:bg-amber-100/50'
+                      }`}
+                    >
+                      {discrepancyFilter === 'DUPLICATE' ? 'Tampilkan Semua Barang' : 'Filter Barang Ganda'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsDuplicateModalOpen(true)}
+                      className="px-3 py-1.5 text-xs font-semibold text-white bg-amber-600 hover:bg-amber-700 rounded-lg shadow-xs flex items-center gap-1 transition-colors"
+                    >
+                      <span>Lihat Rincian</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Universal Search Bar with Camera Scan Trigger */}
               <div className="flex gap-2">
                 <form onSubmit={handleBarcodeSearchSubmit} className="relative flex-1">
@@ -1935,6 +2058,11 @@ export default function App() {
                   className="w-full sm:w-auto px-2.5 py-1.5 text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-200 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="ALL">Semua Status Selisih</option>
+                  {duplicateAnalysis.hasDuplicates && (
+                    <option value="DUPLICATE" className="text-amber-700 dark:text-amber-300 font-bold">
+                      ⚠️ SKU / Barcode Ganda ({duplicateAnalysis.totalAffectedItems})
+                    </option>
+                  )}
                   <option value="MATCH">Cocok ({stats?.matchCount || 0})</option>
                   <option value="MINUS">Minus ({stats?.minusCount || 0})</option>
                   <option value="PLUS">Lebih ({stats?.plusCount || 0})</option>
@@ -2005,6 +2133,16 @@ export default function App() {
                             <span className="font-mono font-bold text-[11px] text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/60 px-1.5 py-0.5 rounded">
                               {item.sku}
                             </span>
+                            {duplicateAnalysis.duplicateSkus.has((item.sku || '').trim().toUpperCase()) && (
+                              <button
+                                type="button"
+                                onClick={() => setIsDuplicateModalOpen(true)}
+                                className="text-[9px] font-sans font-bold px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/40 hover:bg-amber-500/30 transition-colors flex items-center gap-0.5"
+                                title="SKU ini digunakan oleh beberapa barang. Ketuk untuk melihat."
+                              >
+                                ⚠️ SKU Ganda
+                              </button>
+                            )}
                             <span className="text-[10px] text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
                               {item.kategori}
                             </span>
@@ -2032,9 +2170,19 @@ export default function App() {
                             {item.namaBarang}
                           </h4>
                           {item.barcode && (
-                            <p className="text-[11px] font-mono text-slate-400 dark:text-slate-500 mt-0.5">
-                              Barcode: {item.barcode}
-                            </p>
+                            <div className="flex items-center gap-1.5 text-[11px] font-mono text-slate-400 dark:text-slate-500 mt-0.5 flex-wrap">
+                              <span>Barcode: {item.barcode}</span>
+                              {duplicateAnalysis.duplicateBarcodes.has(item.barcode.trim()) && (
+                                <button
+                                  type="button"
+                                  onClick={() => setIsDuplicateModalOpen(true)}
+                                  className="text-[9px] font-sans font-bold px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-700 dark:text-rose-300 border border-rose-500/40 hover:bg-rose-500/30 transition-colors"
+                                  title="Barcode ini digunakan oleh beberapa barang. Ketuk untuk melihat."
+                                >
+                                  ⚠️ Barcode Ganda
+                                </button>
+                              )}
+                            </div>
                           )}
                         </div>
 
@@ -2178,10 +2326,32 @@ export default function App() {
                         >
                           {/* SKU & Barcode */}
                           <td className="px-3.5 py-2 font-mono">
-                            <span className="font-bold text-slate-900 dark:text-slate-100 block">{item.sku}</span>
-                            <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">
-                              {item.barcode || '-'}
-                            </span>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-bold text-slate-900 dark:text-slate-100">{item.sku}</span>
+                              {duplicateAnalysis.duplicateSkus.has((item.sku || '').trim().toUpperCase()) && (
+                                <button
+                                  type="button"
+                                  onClick={() => setIsDuplicateModalOpen(true)}
+                                  className="text-[9px] font-sans font-bold px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/40 hover:bg-amber-500/30 transition-colors"
+                                  title="SKU ini digunakan oleh beberapa barang. Klik untuk rincian."
+                                >
+                                  ⚠️ SKU Ganda
+                                </button>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1.5 text-[10px] text-slate-500 dark:text-slate-400 font-mono mt-0.5 flex-wrap">
+                              <span>{item.barcode || '-'}</span>
+                              {item.barcode && duplicateAnalysis.duplicateBarcodes.has(item.barcode.trim()) && (
+                                <button
+                                  type="button"
+                                  onClick={() => setIsDuplicateModalOpen(true)}
+                                  className="text-[9px] font-sans font-bold px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-700 dark:text-rose-300 border border-rose-500/40 hover:bg-rose-500/30 transition-colors"
+                                  title="Barcode ini digunakan oleh beberapa barang. Klik untuk rincian."
+                                >
+                                  ⚠️ Barcode Ganda
+                                </button>
+                              )}
+                            </div>
                           </td>
 
                           {/* Nama Barang & Satuan / Status */}
@@ -2420,6 +2590,21 @@ export default function App() {
         prefilledBarcode={prefilledBarcode}
         activeUser={activeUser}
         availableCategories={availableCategories}
+        allItems={items}
+      />
+
+      {/* 2.1 Duplicate Items (SKU & Barcode) Inspection Modal */}
+      <DuplicateItemsModal
+        isOpen={isDuplicateModalOpen}
+        onClose={() => setIsDuplicateModalOpen(false)}
+        duplicateAnalysis={duplicateAnalysis}
+        onEditItem={(item) => {
+          setEditingItem(item);
+          setIsItemFormOpen(true);
+        }}
+        onDeleteItem={(item) => {
+          setDeleteConfirmItem(item);
+        }}
       />
 
       {/* 3. User Management Modal */}
@@ -2675,6 +2860,8 @@ export default function App() {
         onClearDemoData={() => setIsClearDemoModalOpen(true)}
         onSelectTab={handleSelectViewTab}
         showResetButton={showResetButton}
+        onOpenDuplicateModal={() => setIsDuplicateModalOpen(true)}
+        duplicateCount={duplicateAnalysis.totalAffectedItems}
       />
     </div>
   );
