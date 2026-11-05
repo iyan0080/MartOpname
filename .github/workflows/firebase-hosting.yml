@@ -34,16 +34,28 @@ jobs:
       - name: Verify Hosting output
         run: test -s dist/index.html
 
-      - name: Verify Firebase credentials are configured
+      - name: Verify and Deploy to Firebase Hosting
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_LEVEL_ZEPPLIN_L9V0L }}
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
         run: |
-          if [ -z "$FIREBASE_SERVICE_ACCOUNT" ]; then
-            echo "Required GitHub Actions secret FIREBASE_SERVICE_ACCOUNT_LEVEL_ZEPPLIN_L9V0L is not configured."
+          if [ -n "$FIREBASE_SERVICE_ACCOUNT" ]; then
+            echo "Deploying using Firebase Service Account..."
+          elif [ -n "$FIREBASE_TOKEN" ]; then
+            echo "Deploying using FIREBASE_TOKEN..."
+            npx firebase-tools deploy --only hosting --token "$FIREBASE_TOKEN" --project level-zepplin-l9v0l
+            exit 0
+          else
+            echo "ERROR: Neither FIREBASE_SERVICE_ACCOUNT_LEVEL_ZEPPLIN_L9V0L nor FIREBASE_TOKEN secret is configured in GitHub repository secrets."
+            echo "Jika Google Cloud memblokir pembuatan Service Account Key ('insufficient permissions to generate private key'), gunakan opsi FIREBASE_TOKEN:"
+            echo "1. Buka terminal di laptop/PC dan jalankan: npx firebase-tools login:ci"
+            echo "2. Login dengan akun Google Anda."
+            echo "3. Salin token yang dihasilkan dan tambahkan ke GitHub Secrets dengan nama: FIREBASE_TOKEN"
             exit 1
           fi
 
-      - name: Deploy to Firebase Hosting
+      - name: Deploy with Firebase Action (if Service Account is provided)
+        if: env.FIREBASE_SERVICE_ACCOUNT != ''
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}

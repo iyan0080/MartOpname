@@ -202,6 +202,113 @@ export default function App() {
     }, 4500);
   };
 
+  // Internal navigation stack to guarantee phone back button always steps back through previously opened tabs
+  const visitedTabsStackRef = useRef<Array<'opname' | 'laporan' | 'kategori'>>(['opname']);
+
+  // Handle tab switching with browser history push so hardware/browser back button returns to previous tab
+  const handleSelectViewTab = (tab: 'opname' | 'laporan' | 'kategori') => {
+    if (tab === activeViewTab) return;
+    visitedTabsStackRef.current.push(tab);
+    window.history.pushState({ type: 'tab', tab }, '');
+    setActiveViewTab(tab);
+  };
+
+  // Track if any modal, sheet, dialog, or drawer is currently open
+  const isAnyModalActive = Boolean(
+    isMobileMenuOpen ||
+    isScannerOpen ||
+    isItemFormOpen ||
+    isFinanceModalOpen ||
+    isLaporanHasilOpnameOpen ||
+    isImportExportOpen ||
+    isGlobalCalcOpen ||
+    isUserModalOpen ||
+    isOpnameDateModalOpen ||
+    isAuditDrawerOpen ||
+    quickAdjustItem ||
+    isPasswordPromptOpen ||
+    isResetConfirmModalOpen ||
+    isClearDemoModalOpen ||
+    deleteConfirmItem ||
+    isDisplayMenuOpen
+  );
+
+  const isAnyModalActiveRef = useRef(isAnyModalActive);
+  isAnyModalActiveRef.current = isAnyModalActive;
+
+  const isPoppingStateRef = useRef(false);
+  const prevModalStateRef = useRef(false);
+
+  const closeAllActiveModals = () => {
+    setIsMobileMenuOpen(false);
+    setIsScannerOpen(false);
+    setIsItemFormOpen(false);
+    setIsFinanceModalOpen(false);
+    setIsLaporanHasilOpnameOpen(false);
+    setIsImportExportOpen(false);
+    setIsGlobalCalcOpen(false);
+    setIsUserModalOpen(false);
+    setIsOpnameDateModalOpen(false);
+    setIsAuditDrawerOpen(false);
+    setQuickAdjustItem(null);
+    setIsPasswordPromptOpen(false);
+    setIsResetConfirmModalOpen(false);
+    setIsClearDemoModalOpen(false);
+    setDeleteConfirmItem(null);
+    setIsDisplayMenuOpen(false);
+  };
+
+  // Sync modal open/close with browser history so back button closes modal first
+  useEffect(() => {
+    if (isAnyModalActive && !prevModalStateRef.current) {
+      window.history.pushState({ type: 'modal', tab: activeViewTab }, '');
+    } else if (!isAnyModalActive && prevModalStateRef.current) {
+      if (!isPoppingStateRef.current && window.history.state?.type === 'modal') {
+        window.history.back();
+      }
+    }
+    prevModalStateRef.current = isAnyModalActive;
+    isPoppingStateRef.current = false;
+  }, [isAnyModalActive, activeViewTab]);
+
+  // Handle phone navigation back button (hardware back, swipe gesture, or browser back)
+  useEffect(() => {
+    if (!window.history.state || !window.history.state.tab) {
+      window.history.replaceState({ type: 'tab', tab: activeViewTab }, '');
+    }
+
+    const handlePopState = (e: PopStateEvent) => {
+      isPoppingStateRef.current = true;
+
+      // 1. If any modal is open, phone back button closes the open modal and stays on current page
+      if (isAnyModalActiveRef.current) {
+        closeAllActiveModals();
+        return;
+      }
+
+      // 2. If no modal was open, restore the previously opened tab/page
+      const prevTab = e.state?.tab;
+      if (prevTab && (prevTab === 'opname' || prevTab === 'laporan' || prevTab === 'kategori')) {
+        if (visitedTabsStackRef.current.length > 1) {
+          visitedTabsStackRef.current.pop();
+        }
+        setActiveViewTab(prevTab);
+      } else {
+        // Fallback using visited tabs stack
+        if (visitedTabsStackRef.current.length > 1) {
+          visitedTabsStackRef.current.pop(); // pop current
+          const lastTab = visitedTabsStackRef.current[visitedTabsStackRef.current.length - 1] || 'opname';
+          setActiveViewTab(lastTab);
+        } else {
+          setActiveViewTab('opname');
+        }
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [activeViewTab]);
+
   // Sync active user change to localStorage with password verification for IYAN
   const handleSelectActiveUser = (name: string) => {
     if (name === 'IYAN') {
@@ -427,6 +534,16 @@ export default function App() {
         lastUpdatedBy: activeUser,
         updatedAt: now,
       };
+
+      // 1. Instant Optimistic UI Update (0ms response)
+      setItems((prevItems) => {
+        const next = prevItems.map((i) => (i.id === item.id ? updatedItem : i));
+        setStats(calculateInventoryStats(next));
+        return next;
+      });
+      if (soundEnabled) playScanSuccessSound();
+      showToast(`[Hardware Scanner] +1 ${item.namaBarang} (Total: ${newQty} pcs)`, 'success');
+
       const log: ScanAuditLog = {
         id: `log-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
         itemId: item.id,
@@ -445,8 +562,6 @@ export default function App() {
       try {
         await saveItemToFirestore(updatedItem);
         await saveLogToFirestore(log);
-        if (soundEnabled) playScanSuccessSound();
-        showToast(`[Hardware Scanner] +1 ${item.namaBarang} (Total: ${newQty} pcs)`, 'success');
       } catch (err) {
         console.error('Scan save error:', err);
       }
@@ -488,6 +603,16 @@ export default function App() {
         lastUpdatedBy: activeUser,
         updatedAt: now,
       };
+
+      // 1. Instant Optimistic UI Update (0ms response)
+      setItems((prevItems) => {
+        const next = prevItems.map((i) => (i.id === local.id ? updatedItem : i));
+        setStats(calculateInventoryStats(next));
+        return next;
+      });
+      if (soundEnabled) playScanSuccessSound();
+      showToast(`+1 ${local.namaBarang} (Total: ${newQty} pcs)`, 'success');
+
       const log: ScanAuditLog = {
         id: `log-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
         itemId: local.id,
@@ -505,7 +630,6 @@ export default function App() {
       try {
         await saveItemToFirestore(updatedItem);
         await saveLogToFirestore(log);
-        showToast(`+1 ${local.namaBarang} (Total: ${newQty} pcs)`, 'success');
         return { success: true, item: updatedItem };
       } catch {
         return { success: false };
@@ -551,6 +675,15 @@ export default function App() {
       lastUpdatedBy: activeUser,
       updatedAt: now,
     };
+
+    // 1. INSTANT OPTIMISTIC UPDATE (0ms touch latency)
+    setItems((prevItems) => {
+      const next = prevItems.map((i) => (i.id === item.id ? updatedItem : i));
+      setStats(calculateInventoryStats(next));
+      return next;
+    });
+    if (soundEnabled) playScanSuccessSound();
+
     const log: ScanAuditLog = {
       id: `log-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
       itemId: item.id,
@@ -568,7 +701,6 @@ export default function App() {
     try {
       await saveItemToFirestore(updatedItem);
       await saveLogToFirestore(log);
-      if (soundEnabled) playScanSuccessSound();
     } catch (err) {
       console.error('Quick delta error:', err);
     }
@@ -602,6 +734,13 @@ export default function App() {
           lastUpdatedBy: activeUser,
           updatedAt: now,
         };
+
+        // Instant Optimistic Update
+        setItems((prev) => {
+          const next = prev.map((i) => (i.id === updatedItem.id ? updatedItem : i));
+          setStats(calculateInventoryStats(next));
+          return next;
+        });
 
         const log: ScanAuditLog = {
           id: `log-${Date.now()}`,
@@ -643,6 +782,13 @@ export default function App() {
           updatedAt: now,
         };
 
+        // Instant Optimistic Update
+        setItems((prev) => {
+          const next = [newItem, ...prev];
+          setStats(calculateInventoryStats(next));
+          return next;
+        });
+
         const log: ScanAuditLog = {
           id: `log-${Date.now()}`,
           itemId: newItem.id,
@@ -679,6 +825,13 @@ export default function App() {
     if (!deleteConfirmItem) return;
     const item = deleteConfirmItem;
     setDeleteConfirmItem(null);
+
+    // Instant Optimistic Update
+    setItems((prev) => {
+      const next = prev.filter((i) => i.id !== item.id);
+      setStats(calculateInventoryStats(next));
+      return next;
+    });
 
     try {
       await deleteItemFromFirestore(item.id);
@@ -718,6 +871,14 @@ export default function App() {
         keterangan: notes || target.keterangan,
       };
 
+      // Instant Optimistic Update
+      setItems((prev) => {
+        const next = prev.map((i) => (i.id === itemId ? updatedItem : i));
+        setStats(calculateInventoryStats(next));
+        return next;
+      });
+      if (soundEnabled) playScanSuccessSound();
+
       const log: ScanAuditLog = {
         id: `log-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
         itemId: target.id,
@@ -735,7 +896,6 @@ export default function App() {
 
       await saveItemToFirestore(updatedItem);
       await saveLogToFirestore(log);
-      if (soundEnabled) playScanSuccessSound();
       showToast(`Stok fisik ${target.namaBarang} diset ke ${newQuantity} pcs.`, 'success');
       return true;
     } catch (err) {
@@ -1049,27 +1209,27 @@ export default function App() {
 
       {/* TOP BAR CONTRACT: Zone 1 (Wordmark) - Zone 2 (Nav links) - Zone 3 (Primary Action) */}
       <header className="sticky top-0 z-40 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 transition-colors">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-8">
+        <div className="max-w-7xl w-full mx-auto px-2.5 sm:px-6 lg:px-8 h-14 sm:h-16 flex items-center justify-between gap-1.5 sm:gap-4 overflow-hidden">
           {/* Zone 1: Brand Wordmark */}
-          <div className="flex items-center gap-3 shrink-0">
-            <div className="w-9 h-9 rounded-lg bg-blue-600 flex items-center justify-center text-white shadow-xs">
-              <Store className="w-5 h-5" />
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0 min-w-0">
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-blue-600 flex items-center justify-center text-white shadow-xs shrink-0">
+              <Store className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-lg font-bold tracking-tight text-slate-900 dark:text-white whitespace-nowrap">
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                <span className="text-base sm:text-lg font-bold tracking-tight text-slate-900 dark:text-white whitespace-nowrap">
                   DR MART
                 </span>
                 <span
-                  className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold font-mono ${
+                  className={`inline-flex items-center gap-1 px-1 sm:px-1.5 py-0.5 rounded text-[9px] sm:text-[10px] font-semibold font-mono ${
                     isCloudConnected
                       ? 'bg-emerald-50 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
                       : 'bg-amber-50 dark:bg-amber-950/70 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
                   }`}
                   title={isCloudConnected ? "Database tersimpan aman di Firebase Cloud Firestore" : "Menghubungkan ke Firebase Cloud..."}
                 >
-                  <Cloud className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
-                  <span>Cloud DB</span>
+                  <Cloud className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-emerald-600 dark:text-emerald-400" />
+                  <span className="hidden xs:inline">Cloud DB</span>
                 </span>
 
                 {/* Tanggal Opname Dilaksanakan Badge */}
@@ -1094,7 +1254,7 @@ export default function App() {
           {/* Zone 2: Clean 1-Line Navigation Links */}
           <nav className="hidden md:flex items-center gap-6 text-xs font-semibold text-slate-600 dark:text-slate-300">
             <button
-              onClick={() => setActiveViewTab('opname')}
+              onClick={() => handleSelectViewTab('opname')}
               className={`hover:text-slate-900 dark:hover:text-white transition-colors whitespace-nowrap py-1 ${
                 activeViewTab === 'opname' ? 'text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400 font-bold' : ''
               }`}
@@ -1102,7 +1262,7 @@ export default function App() {
               Stok Opname Fisik
             </button>
             <button
-              onClick={() => setActiveViewTab('laporan')}
+              onClick={() => handleSelectViewTab('laporan')}
               className={`hover:text-slate-900 dark:hover:text-white transition-colors whitespace-nowrap py-1 ${
                 activeViewTab === 'laporan' ? 'text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400 font-bold' : ''
               }`}
@@ -1110,7 +1270,7 @@ export default function App() {
               Laporan Modal Investasi
             </button>
             <button
-              onClick={() => setActiveViewTab('kategori')}
+              onClick={() => handleSelectViewTab('kategori')}
               className={`hover:text-slate-900 dark:hover:text-white transition-colors whitespace-nowrap py-1 ${
                 activeViewTab === 'kategori' ? 'text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400 font-bold' : ''
               }`}
@@ -1120,7 +1280,7 @@ export default function App() {
           </nav>
 
           {/* Zone 3: 1 Primary Action + Quick Controls */}
-          <div className="flex items-center gap-2.5 shrink-0">
+          <div className="flex items-center gap-1 sm:gap-2.5 shrink-0">
             {/* Theme Toggle (System / Light / Dark) */}
             <ThemeToggle
               themeMode={themeMode}
@@ -1133,25 +1293,25 @@ export default function App() {
               type="button"
               onClick={() => setSoundEnabled(!soundEnabled)}
               title={soundEnabled ? 'Suara Scanner Aktif' : 'Suara Scanner Dimatikan'}
-              className={`p-2 rounded-lg border transition-colors ${
+              className={`p-1.5 sm:p-2 rounded-lg border transition-colors ${
                 soundEnabled
                   ? 'border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700'
                   : 'border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700'
               }`}
             >
-              {soundEnabled ? <Volume2 className="w-4 h-4 text-blue-600 dark:text-blue-400" /> : <VolumeX className="w-4 h-4" />}
+              {soundEnabled ? <Volume2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-600 dark:text-blue-400" /> : <VolumeX className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
             </button>
 
             {/* Live Audit Log Drawer Toggle */}
             <button
               type="button"
               onClick={() => setIsAuditDrawerOpen(true)}
-              className="p-2 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-200 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 relative transition-colors"
+              className="p-1.5 sm:p-2 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-200 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 relative transition-colors"
               title="Lihat Aktivitas Scan Real-Time"
             >
-              <Activity className="w-4 h-4 text-slate-700 dark:text-slate-200" />
+              <Activity className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-700 dark:text-slate-200" />
               {logs.length > 0 && (
-                <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-blue-600 rounded-full" />
+                <span className="absolute -top-1 -right-1 w-2 sm:w-2.5 h-2 sm:h-2.5 bg-blue-600 rounded-full" />
               )}
             </button>
 
@@ -1159,19 +1319,19 @@ export default function App() {
             <button
               type="button"
               onClick={() => setIsUserModalOpen(true)}
-              className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+              className="flex items-center gap-1 sm:gap-2 px-1.5 sm:px-2.5 py-1 sm:py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
             >
               <div
-                className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[11px] font-bold"
+                className="w-5 h-5 sm:w-6 sm:h-6 rounded-full flex items-center justify-center text-white text-[10px] sm:text-[11px] font-bold"
                 style={{ backgroundColor: currentUserObj?.color || '#0284c7' }}
               >
                 {activeUser.slice(0, 2)}
               </div>
-              <span className="text-xs font-bold text-slate-800 dark:text-slate-100">{activeUser}</span>
-              <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+              <span className="hidden xs:inline text-xs font-bold text-slate-800 dark:text-slate-100 max-w-[60px] truncate">{activeUser}</span>
+              <ChevronDown className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-slate-400" />
             </button>
 
-            {/* PRIMARY CTA: Buka Scan Barcode (Hanya desktop/tablet, mobile sudah ada tombol Scan langsung di kotak pencarian) */}
+            {/* PRIMARY CTA: Buka Scan Barcode (Hanya desktop/tablet) */}
             <button
               type="button"
               onClick={() => setIsScannerOpen(true)}
@@ -1185,7 +1345,7 @@ export default function App() {
       </header>
 
       {/* Main Content Viewport */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 pt-3 pb-24 md:pb-8 space-y-3 sm:space-y-6">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-2 sm:px-4 lg:px-8 pt-2 sm:pt-4 pb-28 md:pb-8 space-y-3 sm:space-y-6 overflow-x-hidden">
 
         {/* HERO SECTION / FINANCIAL METRICS DASHBOARD */}
         <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-5 shadow-xs transition-colors">
@@ -1444,31 +1604,31 @@ export default function App() {
           {showStatsSummary ? (
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4 pt-3 sm:pt-4">
               {/* 1. Modal Investasi Fisik */}
-              <div className="p-3.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 transition-colors">
-                <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-1">
-                  <span>Total Modal Diinvestasikan</span>
-                  <span className="text-[10px] bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-mono px-1 rounded">Stok Fisik</span>
+              <div className="p-3 sm:p-3.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 transition-colors min-w-0">
+                <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-1 gap-1">
+                  <span className="truncate">Total Modal Fisik</span>
+                  <span className="text-[10px] bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-mono px-1 rounded shrink-0">Stok Fisik</span>
                 </div>
-                <p className="text-lg font-bold font-mono text-emerald-700 dark:text-emerald-400 tracking-tight">
+                <p className="text-sm xs:text-base sm:text-lg font-bold font-mono text-emerald-700 dark:text-emerald-400 tracking-tight truncate">
                   {formatRupiah(stats?.totalModalInvestasi || 0)}
                 </p>
-                <div className="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400 mt-1 font-mono">
-                  <span>Modal Sistem: {formatRupiah(stats?.totalModalSystem || 0)}</span>
+                <div className="flex items-center gap-1.5 text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 mt-1 font-mono truncate">
+                  <span className="truncate">Sistem: {formatRupiah(stats?.totalModalSystem || 0)}</span>
                 </div>
               </div>
 
               {/* 2. Selisih Nilai Modal */}
-              <div className="p-3.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 transition-colors">
-                <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-1">
-                  <span>Selisih Modal (Fisik - Sistem)</span>
+              <div className="p-3 sm:p-3.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 transition-colors min-w-0">
+                <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-1 gap-1">
+                  <span className="truncate">Selisih Modal</span>
                   {(stats?.selisihModal || 0) < 0 ? (
-                    <TrendingDown className="w-3.5 h-3.5 text-red-600 dark:text-red-400" />
+                    <TrendingDown className="w-3.5 h-3.5 text-red-600 dark:text-red-400 shrink-0" />
                   ) : (
-                    <TrendingUp className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                    <TrendingUp className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
                   )}
                 </div>
                 <p
-                  className={`text-lg font-bold font-mono tracking-tight ${
+                  className={`text-sm xs:text-base sm:text-lg font-bold font-mono tracking-tight truncate ${
                     (stats?.selisihModal || 0) === 0
                       ? 'text-slate-900 dark:text-white'
                       : (stats?.selisihModal || 0) < 0
@@ -1479,48 +1639,47 @@ export default function App() {
                   {(stats?.selisihModal || 0) > 0 ? '+' : ''}
                   {formatRupiah(stats?.selisihModal || 0)}
                 </p>
-                <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 font-mono">
-                  Selisih Qty: {(stats?.totalSelisihQty || 0) > 0 ? '+' : ''}
-                  {stats?.totalSelisihQty || 0} pcs
+                <div className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 mt-1 font-mono truncate">
+                  Qty: {(stats?.totalSelisihQty || 0) > 0 ? '+' : ''}{stats?.totalSelisihQty || 0} pcs
                 </div>
               </div>
 
               {/* 3. Total Kuantitas Barang */}
-              <div className="p-3.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 transition-colors">
-                <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-1">
-                  <span>Total Fisik Terhitung</span>
-                  <span className="text-xs font-mono font-semibold text-slate-700 dark:text-slate-300">
+              <div className="p-3 sm:p-3.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 transition-colors min-w-0">
+                <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-1 gap-1">
+                  <span className="truncate">Total Fisik</span>
+                  <span className="text-[10px] sm:text-xs font-mono font-semibold text-slate-700 dark:text-slate-300 shrink-0">
                     {stats?.totalItems || 0} SKU
                   </span>
                 </div>
-                <p className="text-lg font-bold font-mono text-slate-900 dark:text-white tracking-tight">
+                <p className="text-sm xs:text-base sm:text-lg font-bold font-mono text-slate-900 dark:text-white tracking-tight truncate">
                   {stats?.totalPhysicalQty || 0} <span className="text-xs text-slate-500 dark:text-slate-400 font-sans">pcs</span>
                 </p>
-                <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 font-mono">
-                  Stok Sistem: {stats?.totalSystemQty || 0} pcs
+                <div className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 mt-1 font-mono truncate">
+                  Sistem: {stats?.totalSystemQty || 0} pcs
                 </div>
               </div>
 
               {/* 4. Status Progress Audit */}
-              <div className="p-3.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 transition-colors">
-                <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-1">
-                  <span>Status Hasil Audit</span>
-                  <span className="text-[11px] font-mono font-bold text-blue-600 dark:text-blue-400">
+              <div className="p-3 sm:p-3.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 transition-colors min-w-0">
+                <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-1 gap-1">
+                  <span className="truncate">Status Audit</span>
+                  <span className="text-[10px] sm:text-[11px] font-mono font-bold text-blue-600 dark:text-blue-400 shrink-0">
                     {stats?.totalItems
                       ? Math.round(((stats.countedItemsCount || 0) / stats.totalItems) * 100)
                       : 0}
-                    % Terhitung
+                    %
                   </span>
                 </div>
-                <div className="flex items-center gap-2 text-xs font-mono font-bold mt-1">
+                <div className="flex items-center gap-1 sm:gap-2 text-[11px] sm:text-xs font-mono font-bold mt-1 truncate">
                   <span className="text-emerald-700">{stats?.matchCount || 0} Cocok</span>
                   <span>·</span>
-                  <span className="text-red-600">{stats?.minusCount || 0} Minus</span>
+                  <span className="text-red-600">{stats?.minusCount || 0} -</span>
                   <span>·</span>
-                  <span className="text-blue-600">{stats?.plusCount || 0} Lebih</span>
+                  <span className="text-blue-600">{stats?.plusCount || 0} +</span>
                 </div>
-                <div className="text-[11px] text-slate-500 mt-1">
-                  {stats?.uncountedItemsCount || 0} SKU belum terhitung
+                <div className="text-[10px] sm:text-[11px] text-slate-500 mt-1 truncate">
+                  {stats?.uncountedItemsCount || 0} SKU belum
                 </div>
               </div>
             </div>
@@ -1565,7 +1724,40 @@ export default function App() {
               )}
             </div>
 
-            <div className="overflow-x-auto">
+            {/* Mobile View: Clean Category Cards (sm:hidden, no horizontal scroll) */}
+            <div className="sm:hidden space-y-2.5">
+              {stats?.categorySummary.map((cat) => {
+                const pct = stats.totalModalInvestasi > 0
+                  ? ((cat.totalModal / stats.totalModalInvestasi) * 100).toFixed(1)
+                  : '0';
+                return (
+                  <div
+                    key={cat.kategori}
+                    className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700/80 space-y-1.5"
+                  >
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-bold text-xs text-slate-900 dark:text-white">{cat.kategori}</h4>
+                      <span className="text-xs font-mono font-bold text-emerald-700 dark:text-emerald-400">
+                        {formatRupiah(cat.totalModal)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 pt-1 border-t border-slate-200/60 dark:border-slate-700/60">
+                      <span>{cat.itemCount} SKU • {cat.totalQty} unit</span>
+                      <span className="font-semibold text-slate-700 dark:text-slate-300">{pct}% dari modal</span>
+                    </div>
+                  </div>
+                );
+              })}
+              <div className="p-3 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-300 dark:border-slate-700 flex items-center justify-between font-bold text-xs">
+                <span>TOTAL SEMUA</span>
+                <span className="font-mono text-emerald-800 dark:text-emerald-300">
+                  {formatRupiah(stats?.totalModalInvestasi || 0)}
+                </span>
+              </div>
+            </div>
+
+            {/* Desktop View: Full Table (hidden sm:block) */}
+            <div className="hidden sm:block overflow-x-auto">
               <table className="w-full text-xs text-left">
                 <thead className="bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-b border-slate-200 dark:border-slate-700">
                   <tr>
@@ -1685,7 +1877,74 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="overflow-x-auto">
+              {/* Mobile View: Clean Vertical Discrepancy Cards (sm:hidden, no horizontal scroll) */}
+              <div className="sm:hidden space-y-2.5">
+                {filteredItems.filter((item) => (item.quantity - item.quantitySystem) !== 0).length === 0 ? (
+                  <div className="py-8 text-center text-xs text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/40 rounded-xl">
+                    Semua stok fisik dan stok sistem cocok sempurna (100% seimbang).
+                  </div>
+                ) : (
+                  filteredItems
+                    .filter((item) => (item.quantity - item.quantitySystem) !== 0)
+                    .map((item) => {
+                      const diff = item.quantity - item.quantitySystem;
+                      const diffModal = diff * item.hargaModal;
+                      return (
+                        <div
+                          key={item.id}
+                          className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700/80 space-y-2"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="font-mono font-bold text-[10px] text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/60 px-1.5 py-0.5 rounded">
+                                  {item.sku}
+                                </span>
+                                <span className="text-[10px] text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
+                                  {item.kategori}
+                                </span>
+                              </div>
+                              <h4 className="font-bold text-xs text-slate-900 dark:text-white mt-1 leading-snug">
+                                {item.namaBarang}
+                              </h4>
+                            </div>
+                            <span
+                              className={`shrink-0 text-[10px] font-mono font-bold px-2 py-0.5 rounded-full ${
+                                diff < 0
+                                  ? 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300'
+                                  : 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300'
+                              }`}
+                            >
+                              {diff > 0 ? `+${diff}` : diff} {item.satuan || 'pcs'}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2 text-[11px] pt-1.5 border-t border-slate-200/60 dark:border-slate-700/60">
+                            <div>
+                              <span className="text-slate-500 dark:text-slate-400 block text-[10px]">Fisik vs Sistem</span>
+                              <span className="font-mono font-semibold text-slate-800 dark:text-slate-200">
+                                {item.quantity} / {item.quantitySystem} {item.satuan || 'pcs'}
+                              </span>
+                            </div>
+                            <div className="text-right">
+                              <span className="text-slate-500 dark:text-slate-400 block text-[10px]">Selisih Modal</span>
+                              <span
+                                className={`font-mono font-bold ${
+                                  diffModal < 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'
+                                }`}
+                              >
+                                {diffModal > 0 ? `+` : ''}{formatRupiah(diffModal)}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })
+                )}
+              </div>
+
+              {/* Desktop View: Full Table (hidden sm:block) */}
+              <div className="hidden sm:block overflow-x-auto">
                 <table className="w-full text-xs text-left">
                   <thead className="bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-b border-slate-200 dark:border-slate-700">
                     <tr>
@@ -2505,7 +2764,7 @@ export default function App() {
       {/* 13. Mobile Bottom Dock Navigation (Thumb-friendly Bar at bottom of screen) */}
       <MobileBottomDock
         activeTab={activeViewTab}
-        onSelectTab={setActiveViewTab}
+        onSelectTab={handleSelectViewTab}
         onOpenScanner={() => setIsScannerOpen(true)}
         onOpenCalculator={() => {
           setCalcTargetItem(null);
@@ -2539,7 +2798,7 @@ export default function App() {
         onOpenDisplayOptions={() => setIsDisplayMenuOpen(true)}
         onResetSession={handleResetSession}
         onClearDemoData={() => setIsClearDemoModalOpen(true)}
-        onSelectTab={setActiveViewTab}
+        onSelectTab={handleSelectViewTab}
         showResetButton={showResetButton}
       />
     </div>

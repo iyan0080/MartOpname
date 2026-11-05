@@ -102,25 +102,27 @@ export const LaporanHasilOpnameModal: React.FC<LaporanHasilOpnameModalProps> = (
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            {/* Tombol Cetak Dokumen PDF Resmi menggunakan Library jsPDF */}
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            {/* Tombol Cetak Dokumen PDF Resmi */}
             <button
               type="button"
               onClick={handleDownloadPDF}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white rounded-lg text-xs font-semibold shadow-xs transition-all cursor-pointer"
+              className="inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white rounded-lg text-xs font-semibold shadow-xs transition-all cursor-pointer whitespace-nowrap"
               title="Download Berita Acara Resmi Format PDF (A4) untuk Arsip Fisik Toko"
             >
-              <Download className="w-4 h-4" />
-              <span>Cetak Berita Acara (PDF)</span>
+              <Download className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <span className="sm:hidden">PDF</span>
+              <span className="hidden sm:inline">Cetak Berita Acara (PDF)</span>
             </button>
             <button
               type="button"
               onClick={handleExportXLSX}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors"
+              className="inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors whitespace-nowrap"
               title="Download Data Lengkap Excel (.xlsx)"
             >
-              <FileSpreadsheet className="w-4 h-4" />
-              <span>Unduh Excel</span>
+              <FileSpreadsheet className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <span className="sm:hidden">Excel</span>
+              <span className="hidden sm:inline">Unduh Excel</span>
             </button>
             <button
               type="button"
@@ -142,7 +144,7 @@ export const LaporanHasilOpnameModal: React.FC<LaporanHasilOpnameModalProps> = (
         </div>
 
         {/* Printable Document Container */}
-        <div ref={printAreaRef} className="p-6 sm:p-8 overflow-y-auto space-y-6 text-slate-800 dark:text-slate-100 bg-white dark:bg-slate-900 print:p-0 print:overflow-visible">
+        <div ref={printAreaRef} className="p-3.5 sm:p-8 overflow-y-auto space-y-4 sm:space-y-6 text-slate-800 dark:text-slate-100 bg-white dark:bg-slate-900 print:p-0 print:overflow-visible">
           {/* Header Dokumen Laporan Resmi */}
           <div className="border-b-2 border-slate-900 dark:border-slate-100 pb-4 text-center space-y-1">
             <div className="flex items-center justify-center gap-2">
@@ -280,7 +282,43 @@ export const LaporanHasilOpnameModal: React.FC<LaporanHasilOpnameModalProps> = (
               2. Ringkasan Audit Stok Fisik vs Sistem
             </h3>
 
-            <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+            {/* Mobile View: Clean Vertical Cards (sm:hidden, no horizontal scroll) */}
+            <div className="sm:hidden space-y-2.5">
+              {/* Card 1: Kuantitas Barang */}
+              <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700/80 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-xs text-slate-800 dark:text-slate-100">Total Kuantitas Fisik</span>
+                  <span className="font-mono font-bold text-xs text-slate-900 dark:text-white">
+                    {stats?.totalPhysicalQty || 0} pcs
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-200/60 dark:border-slate-700/60">
+                  <span>Sistem: {stats?.totalSystemQty || 0} pcs</span>
+                  <span className={`font-mono font-bold ${(stats?.totalSelisihQty || 0) < 0 ? 'text-rose-600' : (stats?.totalSelisihQty || 0) > 0 ? 'text-emerald-600' : 'text-slate-600'}`}>
+                    Selisih: {(stats?.totalSelisihQty || 0) > 0 ? '+' : ''}{stats?.totalSelisihQty || 0}
+                  </span>
+                </div>
+              </div>
+
+              {/* Card 2: Nilai Modal Investasi */}
+              <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700/80 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-xs text-slate-800 dark:text-slate-100">Total Nilai Modal Fisik</span>
+                  <span className="font-mono font-bold text-xs text-slate-900 dark:text-white">
+                    {formatRupiah(totalAsetFisikBarang)}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-200/60 dark:border-slate-700/60">
+                  <span>Sistem: {formatRupiah(totalAsetSistemBarang)}</span>
+                  <span className={`font-mono font-bold ${selisihModalBarang < 0 ? 'text-rose-600' : selisihModalBarang > 0 ? 'text-emerald-600' : 'text-slate-600'}`}>
+                    {selisihModalBarang > 0 ? '+' : ''}{formatRupiah(selisihModalBarang)}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Desktop View: Full Table (hidden sm:block) */}
+            <div className="hidden sm:block border border-slate-200 dark:border-slate-700 rounded-xl overflow-x-auto">
               <table className="w-full text-xs text-left">
                 <thead className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold uppercase text-[10px]">
                   <tr>

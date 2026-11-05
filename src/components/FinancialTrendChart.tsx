@@ -322,41 +322,41 @@ export const FinancialTrendChart: React.FC<FinancialTrendChartProps> = ({
       {/* 4 Micro KPI Metric Badges */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
         {/* KPI 1: Modal Fisik Terkini */}
-        <div className="p-3 rounded-lg bg-blue-50/70 dark:bg-blue-950/30 border border-blue-200/80 dark:border-blue-900/50">
-          <span className="text-[10px] text-blue-800 dark:text-blue-300 font-semibold block">
+        <div className="p-3 rounded-lg bg-blue-50/70 dark:bg-blue-950/30 border border-blue-200/80 dark:border-blue-900/50 min-w-0">
+          <span className="text-[10px] text-blue-800 dark:text-blue-300 font-semibold block truncate">
             Modal Fisik Terhitung
           </span>
-          <p className="text-sm sm:text-base font-bold font-mono text-blue-950 dark:text-blue-100 mt-0.5">
+          <p className="text-xs sm:text-sm md:text-base font-bold font-mono text-blue-950 dark:text-blue-100 mt-0.5 truncate">
             {formatRupiah(currentModalFisik)}
           </p>
-          <div className="flex items-center gap-1 text-[10px] mt-1 text-blue-700 dark:text-blue-300">
+          <div className="flex items-center gap-1 text-[10px] mt-1 text-blue-700 dark:text-blue-300 truncate">
             {Number(modalChange) >= 0 ? (
-              <TrendingUp className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+              <TrendingUp className="w-3 h-3 text-emerald-600 dark:text-emerald-400 shrink-0" />
             ) : (
-              <TrendingDown className="w-3 h-3 text-red-600 dark:text-red-400" />
+              <TrendingDown className="w-3 h-3 text-red-600 dark:text-red-400 shrink-0" />
             )}
-            <span>
+            <span className="truncate">
               {Number(modalChange) >= 0 ? `+${modalChangePct}%` : `${modalChangePct}%`} vs awal {interval === 'daily' ? 'minggu' : 'periode'}
             </span>
           </div>
         </div>
 
         {/* KPI 2: Estimasi Nilai Jual */}
-        <div className="p-3 rounded-lg bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200/80 dark:border-emerald-900/50">
-          <span className="text-[10px] text-emerald-800 dark:text-emerald-300 font-semibold block">
+        <div className="p-3 rounded-lg bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200/80 dark:border-emerald-900/50 min-w-0">
+          <span className="text-[10px] text-emerald-800 dark:text-emerald-300 font-semibold block truncate">
             Estimasi Nilai Jual Eceran
           </span>
-          <p className="text-sm sm:text-base font-bold font-mono text-emerald-950 dark:text-emerald-100 mt-0.5">
+          <p className="text-xs sm:text-sm md:text-base font-bold font-mono text-emerald-950 dark:text-emerald-100 mt-0.5 truncate">
             {formatRupiah(currentTotalNilaiJual)}
           </p>
-          <span className="text-[10px] text-emerald-700 dark:text-emerald-300 mt-1 block">
+          <span className="text-[10px] text-emerald-700 dark:text-emerald-300 mt-1 block truncate">
             Potensi Laba: +{profitMarginPct}% ({formatRupiah(potentialProfit)})
           </span>
         </div>
 
         {/* KPI 3: Selisih Modal Opname */}
         <div
-          className={`p-3 rounded-lg border ${
+          className={`p-3 rounded-lg border min-w-0 ${
             currentSelisih === 0
               ? 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700'
               : currentSelisih < 0
@@ -364,11 +364,11 @@ export const FinancialTrendChart: React.FC<FinancialTrendChartProps> = ({
               : 'bg-indigo-50/70 dark:bg-indigo-950/30 border-indigo-200/80 dark:border-indigo-900/50'
           }`}
         >
-          <span className="text-[10px] text-slate-600 dark:text-slate-400 font-semibold block">
+          <span className="text-[10px] text-slate-600 dark:text-slate-400 font-semibold block truncate">
             Selisih Audit Modal (Fisik - Buku)
           </span>
           <p
-            className={`text-sm sm:text-base font-bold font-mono mt-0.5 ${
+            className={`text-xs sm:text-sm md:text-base font-bold font-mono mt-0.5 truncate ${
               currentSelisih === 0
                 ? 'text-emerald-700 dark:text-emerald-300'
                 : currentSelisih < 0
@@ -379,20 +379,20 @@ export const FinancialTrendChart: React.FC<FinancialTrendChartProps> = ({
             {currentSelisih > 0 ? `+` : ''}
             {formatRupiah(currentSelisih)}
           </p>
-          <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 block">
+          <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 block truncate">
             {currentSelisih === 0 ? '✓ Seimbang Sempurna' : currentSelisih < 0 ? 'Defisit Modal Barang' : 'Surplus Modal Barang'}
           </span>
         </div>
 
         {/* KPI 4: Total Aset Toko */}
-        <div className="p-3 rounded-lg bg-purple-50/70 dark:bg-purple-950/30 border border-purple-200/80 dark:border-purple-900/50">
-          <span className="text-[10px] text-purple-800 dark:text-purple-300 font-semibold block">
+        <div className="p-3 rounded-lg bg-purple-50/70 dark:bg-purple-950/30 border border-purple-200/80 dark:border-purple-900/50 min-w-0">
+          <span className="text-[10px] text-purple-800 dark:text-purple-300 font-semibold block truncate">
             Total Aset Riil Toko Mart
           </span>
-          <p className="text-sm sm:text-base font-bold font-mono text-purple-950 dark:text-purple-100 mt-0.5">
+          <p className="text-xs sm:text-sm md:text-base font-bold font-mono text-purple-950 dark:text-purple-100 mt-0.5 truncate">
             {formatRupiah(currentTotalAset)}
           </p>
-          <span className="text-[10px] text-purple-700 dark:text-purple-300 mt-1 block">
+          <span className="text-[10px] text-purple-700 dark:text-purple-300 mt-1 block truncate">
             Barang ({formatRupiah(currentModalFisik)}) + Kas & Piutang
           </span>
         </div>

@@ -3,11 +3,40 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @layer base {
+  *, ::before, ::after {
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html, body {
+    width: 100% !important;
+    max-width: 100vw !important;
+    overflow-x: hidden !important;
+    margin: 0;
+    padding: 0;
+    -webkit-text-size-adjust: 100%;
+    overscroll-behavior-x: none;
+    touch-action: manipulation;
+  }
+
+  button, a, input, select, [role="button"] {
+    touch-action: manipulation;
+  }
+
   body {
     font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     background-color: #f8fafc;
     color: #0f172a;
     transition: background-color 0.2s ease, color 0.2s ease;
+  }
+  
+  #root {
+    width: 100% !important;
+    max-width: 100vw !important;
+    overflow-x: hidden !important;
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
   }
   
   .dark body {
