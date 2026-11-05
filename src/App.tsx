@@ -150,11 +150,6 @@ export default function App() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // Opsi Tampilan (Visibility preferences, persisted in localStorage)
-  const [showStatsSummary, setShowStatsSummary] = useState<boolean>(() => {
-    const saved = localStorage.getItem('mart_show_stats_summary');
-    return saved !== null ? saved === 'true' : true;
-  });
-
   const [showResetButton, setShowResetButton] = useState<boolean>(() => {
     const saved = localStorage.getItem('mart_show_reset_button');
     return saved !== null ? saved === 'true' : true;
@@ -162,14 +157,6 @@ export default function App() {
 
   const [isDisplayMenuOpen, setIsDisplayMenuOpen] = useState(false);
   const displayMenuRef = useRef<HTMLDivElement>(null);
-
-  const toggleStatsSummary = () => {
-    setShowStatsSummary((prev) => {
-      const next = !prev;
-      localStorage.setItem('mart_show_stats_summary', String(next));
-      return next;
-    });
-  };
 
   const toggleResetButton = () => {
     setShowResetButton((prev) => {
@@ -1349,29 +1336,19 @@ export default function App() {
 
         {/* HERO SECTION / FINANCIAL METRICS DASHBOARD */}
         <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-5 shadow-xs transition-colors">
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 sm:pb-4 border-b border-slate-100 dark:border-slate-800">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
             <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-lg sm:text-xl font-bold tracking-tight text-slate-900 dark:text-white leading-tight">
-                  Dashboard Stok Opname
-                </h1>
-                <button
-                  type="button"
-                  onClick={toggleStatsSummary}
-                  className="p-1 rounded-md text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                  title={showStatsSummary ? "Sembunyikan kartu ringkasan" : "Tampilkan kartu ringkasan"}
-                >
-                  {showStatsSummary ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                </button>
-              </div>
+              <h1 className="text-lg sm:text-xl font-bold tracking-tight text-slate-900 dark:text-white leading-tight">
+                Dashboard Stok Opname
+              </h1>
               <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                 Audit fisik barang toko mart secara serentak bersama tim kasir & gudang
               </p>
             </div>
 
             {/* ACTION BAR: Clean & uncluttered in Mobile, Full in Desktop */}
-            {/* 1. Mobile Simple 2-Button Action Bar (sm:hidden) */}
-            <div className="flex sm:hidden items-center justify-between gap-2 pt-1">
+            {/* 1. Mobile Action Bar (sm:hidden) - Menu Lengkap dihapus karena sudah ada di Bottom Dock */}
+            <div className="flex sm:hidden items-center pt-1">
               <button
                 type="button"
                 onClick={() => {
@@ -1379,19 +1356,10 @@ export default function App() {
                   setPrefilledBarcode('');
                   setIsItemFormOpen(true);
                 }}
-                className="flex-1 py-2 px-3 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 active:scale-98 rounded-xl flex items-center justify-center gap-1.5 shadow-xs transition-transform"
+                className="w-full py-2.5 px-4 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 active:scale-98 rounded-xl flex items-center justify-center gap-1.5 shadow-xs transition-transform"
               >
                 <Plus className="w-4 h-4" />
                 <span>Tambah Barang</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setIsMobileMenuOpen(true)}
-                className="py-2 px-3.5 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-98 rounded-xl flex items-center gap-1.5 transition-colors border border-slate-200 dark:border-slate-700"
-              >
-                <SlidersHorizontal className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-                <span>Menu Lengkap</span>
               </button>
             </div>
 
@@ -1523,23 +1491,6 @@ export default function App() {
                       <label className="flex items-start gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer transition-colors select-none">
                         <input
                           type="checkbox"
-                          checked={showStatsSummary}
-                          onChange={toggleStatsSummary}
-                          className="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 shrink-0"
-                        />
-                        <div className="flex-1 text-xs">
-                          <span className="font-semibold text-slate-900 dark:text-white block">
-                            Ringkasan Modal & Statistik
-                          </span>
-                          <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 block">
-                            Tampilkan 4 kartu nilai modal fisik, selisih rupiah, total SKU, dan status audit
-                          </span>
-                        </div>
-                      </label>
-
-                      <label className="flex items-start gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer transition-colors select-none">
-                        <input
-                          type="checkbox"
                           checked={showResetButton}
                           onChange={toggleResetButton}
                           className="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 shrink-0"
@@ -1599,106 +1550,6 @@ export default function App() {
               )}
             </div>
           </div>
-
-          {/* 4-COLUMN FINANCIAL & QUANTITY STATS (2x2 di mobile agar rapi dan hemat ruang) */}
-          {showStatsSummary ? (
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4 pt-3 sm:pt-4">
-              {/* 1. Modal Investasi Fisik */}
-              <div className="p-3 sm:p-3.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 transition-colors min-w-0">
-                <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-1 gap-1">
-                  <span className="truncate">Total Modal Fisik</span>
-                  <span className="text-[10px] bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-mono px-1 rounded shrink-0">Stok Fisik</span>
-                </div>
-                <p className="text-sm xs:text-base sm:text-lg font-bold font-mono text-emerald-700 dark:text-emerald-400 tracking-tight truncate">
-                  {formatRupiah(stats?.totalModalInvestasi || 0)}
-                </p>
-                <div className="flex items-center gap-1.5 text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 mt-1 font-mono truncate">
-                  <span className="truncate">Sistem: {formatRupiah(stats?.totalModalSystem || 0)}</span>
-                </div>
-              </div>
-
-              {/* 2. Selisih Nilai Modal */}
-              <div className="p-3 sm:p-3.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 transition-colors min-w-0">
-                <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-1 gap-1">
-                  <span className="truncate">Selisih Modal</span>
-                  {(stats?.selisihModal || 0) < 0 ? (
-                    <TrendingDown className="w-3.5 h-3.5 text-red-600 dark:text-red-400 shrink-0" />
-                  ) : (
-                    <TrendingUp className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
-                  )}
-                </div>
-                <p
-                  className={`text-sm xs:text-base sm:text-lg font-bold font-mono tracking-tight truncate ${
-                    (stats?.selisihModal || 0) === 0
-                      ? 'text-slate-900 dark:text-white'
-                      : (stats?.selisihModal || 0) < 0
-                      ? 'text-red-600 dark:text-red-400'
-                      : 'text-blue-600 dark:text-blue-400'
-                  }`}
-                >
-                  {(stats?.selisihModal || 0) > 0 ? '+' : ''}
-                  {formatRupiah(stats?.selisihModal || 0)}
-                </p>
-                <div className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 mt-1 font-mono truncate">
-                  Qty: {(stats?.totalSelisihQty || 0) > 0 ? '+' : ''}{stats?.totalSelisihQty || 0} pcs
-                </div>
-              </div>
-
-              {/* 3. Total Kuantitas Barang */}
-              <div className="p-3 sm:p-3.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 transition-colors min-w-0">
-                <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-1 gap-1">
-                  <span className="truncate">Total Fisik</span>
-                  <span className="text-[10px] sm:text-xs font-mono font-semibold text-slate-700 dark:text-slate-300 shrink-0">
-                    {stats?.totalItems || 0} SKU
-                  </span>
-                </div>
-                <p className="text-sm xs:text-base sm:text-lg font-bold font-mono text-slate-900 dark:text-white tracking-tight truncate">
-                  {stats?.totalPhysicalQty || 0} <span className="text-xs text-slate-500 dark:text-slate-400 font-sans">pcs</span>
-                </p>
-                <div className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 mt-1 font-mono truncate">
-                  Sistem: {stats?.totalSystemQty || 0} pcs
-                </div>
-              </div>
-
-              {/* 4. Status Progress Audit */}
-              <div className="p-3 sm:p-3.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 transition-colors min-w-0">
-                <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-1 gap-1">
-                  <span className="truncate">Status Audit</span>
-                  <span className="text-[10px] sm:text-[11px] font-mono font-bold text-blue-600 dark:text-blue-400 shrink-0">
-                    {stats?.totalItems
-                      ? Math.round(((stats.countedItemsCount || 0) / stats.totalItems) * 100)
-                      : 0}
-                    %
-                  </span>
-                </div>
-                <div className="flex items-center gap-1 sm:gap-2 text-[11px] sm:text-xs font-mono font-bold mt-1 truncate">
-                  <span className="text-emerald-700">{stats?.matchCount || 0} Cocok</span>
-                  <span>·</span>
-                  <span className="text-red-600">{stats?.minusCount || 0} -</span>
-                  <span>·</span>
-                  <span className="text-blue-600">{stats?.plusCount || 0} +</span>
-                </div>
-                <div className="text-[10px] sm:text-[11px] text-slate-500 mt-1 truncate">
-                  {stats?.uncountedItemsCount || 0} SKU belum
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="mt-3 py-2 px-3.5 rounded-lg bg-slate-50 dark:bg-slate-800/40 border border-dashed border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-              <div className="flex items-center gap-2">
-                <EyeOff className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                <span>Bagian ringkasan modal & statistik sedang disembunyikan.</span>
-              </div>
-              <button
-                type="button"
-                onClick={toggleStatsSummary}
-                className="font-semibold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 flex items-center gap-1 shrink-0 ml-2"
-              >
-                <Eye className="w-3.5 h-3.5" />
-                <span>Tampilkan Kembali</span>
-              </button>
-            </div>
-          )}
         </div>
 
         {/* VIEW TABS / SECTION SWITCH */}
