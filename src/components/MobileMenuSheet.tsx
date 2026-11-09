@@ -132,14 +132,14 @@ export const MobileMenuSheet: React.FC<MobileMenuSheetProps> = ({
                     <div>
                       <div className="flex items-center gap-1.5">
                         <span className="text-xs font-bold text-slate-900 dark:text-white">
-                          Pencatatan Kas, Hutang & Piutang
+                          Pencatatan Keuangan & Operasional
                         </span>
                         <span className="text-[9px] px-1.5 py-0.2 bg-emerald-200 text-emerald-900 dark:bg-emerald-900 dark:text-emerald-200 rounded font-bold">
                           IYAN & HENDRI
                         </span>
                       </div>
                       <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                        Uang tunai, bank, hutang mitra supplier, saldo santri, piutang marhalah
+                        Kas, bank, belanja pengeluaran operasional toko, hutang mitra & piutang
                       </p>
                     </div>
                   </div>

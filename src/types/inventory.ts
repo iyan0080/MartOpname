@@ -96,6 +96,17 @@ export interface SaldoSantriItem {
   keterangan?: string;
 }
 
+export interface PengeluaranOperasionalItem {
+  id: string;
+  tanggal: string; // YYYY-MM-DD
+  kategori: string; // Perlengkapan, Listrik, Transport, dsb
+  namaPengeluaran: string; // Uraian / Nama belanja operasional
+  jumlah: number; // Nominal Rp
+  metodeBayar: 'tunai' | 'bank'; // Kas laci tunai atau transfer bank / QRIS
+  keterangan?: string; // No nota / keterangan tambahan
+  pj?: string; // Dicatat / PIC
+}
+
 export interface KasData {
   uangTunai: number; // Uang tunai fisik (cash drawer / brankas)
   saldoBank: number; // Saldo rekening bank / QRIS
@@ -109,6 +120,7 @@ export interface FinanceRecord {
   piutangList: PiutangItem[];
   hutangMitraList: HutangMitraItem[];
   saldoSantriList: SaldoSantriItem[];
+  pengeluaranOperasionalList?: PengeluaranOperasionalItem[];
   lastUpdatedBy: string;
   updatedAt: string;
 }
@@ -121,6 +133,7 @@ export interface LaporanOpnameSummary {
   totalPiutang: number;
   totalHutangMitra: number;
   totalSaldoSantri: number;
+  totalPengeluaranOperasional: number;
   totalKewajiban: number; // Hutang Mitra + Saldo Santri
   totalAsetLancar: number; // Total Kas + Total Piutang
   totalAsetFisikBarang: number; // Nilai Modal Investasi Stok Fisik

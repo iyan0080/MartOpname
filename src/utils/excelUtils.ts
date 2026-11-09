@@ -417,6 +417,10 @@ export function exportLaporanHasilOpnameKomprehensif(
   const totalHutangMitra = (finance.hutangMitraList || []).reduce((sum, h) => sum + (Number(h.jumlah) || 0), 0);
   const totalSaldoSantri = (finance.saldoSantriList || []).reduce((sum, s) => sum + (Number(s.jumlah) || 0), 0);
   const totalKewajiban = totalHutangMitra + totalSaldoSantri;
+  const totalPengeluaranOperasional = (finance.pengeluaranOperasionalList || []).reduce(
+    (sum, op) => sum + (Number(op.jumlah) || 0),
+    0
+  );
   const totalAsetFisikBarang = stats?.totalModalInvestasi || 0;
   const totalAsetRiil = totalAsetFisikBarang + totalKas + totalPiutang;
   const nilaiBersihMart = totalAsetRiil - totalKewajiban;
@@ -441,6 +445,7 @@ export function exportLaporanHasilOpnameKomprehensif(
     ['=== NILAI BERSIH MART (NET EQUITY) ===', nilaiBersihMart, 'Total Aset Riil dikurangi Total Kewajiban'],
     ['Modal Awal Mart', modalAwal, 'Nilai modal awal pendirian/operasional'],
     ['Surplus / Pertumbuhan Modal', pertumbuhanModal, pertumbuhanModal >= 0 ? 'Surplus / Laba Akumulasi' : 'Defisit / Penurunan Modal'],
+    ['Total Pengeluaran Operasional Toko', totalPengeluaranOperasional, `${(finance.pengeluaranOperasionalList || []).length} pengeluaran dibukukan`],
     [''],
     ['2. STATISTIK FISIK BARANG', 'NILAI', 'CATATAN'],
     ['Total SKU / Jenis Barang', stats?.totalItems || items.length, 'Produk terdaftar di mart'],
@@ -505,9 +510,24 @@ export function exportLaporanHasilOpnameKomprehensif(
   financeRows.push(['TOTAL SALDO SANTRI', totalSaldoSantri, '']);
   financeRows.push(['']);
   financeRows.push(['TOTAL KEWAJIBAN (HUTANG MITRA + SALDO SANTRI)', totalKewajiban, '']);
+  financeRows.push(['']);
+
+  financeRows.push(['E. PENGELUARAN OPERASIONAL DR MART', 'NOMINAL (RP)', 'METODE / KETERANGAN']);
+  if ((finance.pengeluaranOperasionalList || []).length === 0) {
+    financeRows.push(['Tidak ada catatan pengeluaran operasional', 0, '-']);
+  } else {
+    (finance.pengeluaranOperasionalList || []).forEach((op, idx) => {
+      financeRows.push([
+        `${idx + 1}. [${op.tanggal}] ${op.kategori} - ${op.namaPengeluaran}`,
+        Number(op.jumlah) || 0,
+        `${op.metodeBayar === 'tunai' ? 'Tunai Laci' : 'Bank/QRIS'} ${op.keterangan ? `| ${op.keterangan}` : ''} ${op.pj ? `(${op.pj})` : ''}`,
+      ]);
+    });
+  }
+  financeRows.push(['TOTAL PENGELUARAN OPERASIONAL', totalPengeluaranOperasional, '']);
 
   const wsFinance = XLSX.utils.aoa_to_sheet(financeRows);
-  wsFinance['!cols'] = [{ wch: 42 }, { wch: 22 }, { wch: 36 }];
+  wsFinance['!cols'] = [{ wch: 48 }, { wch: 22 }, { wch: 40 }];
   XLSX.utils.book_append_sheet(wb, wsFinance, 'Rincian Kas-Hutang-Piutang');
 
   // Sheet 3: Detail Barang

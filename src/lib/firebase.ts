@@ -375,6 +375,7 @@ export const DEFAULT_FINANCE_RECORD: FinanceRecord = {
   piutangList: [],
   hutangMitraList: [],
   saldoSantriList: [],
+  pengeluaranOperasionalList: [],
   lastUpdatedBy: 'Sistem',
   updatedAt: new Date().toISOString(),
 };
@@ -398,6 +399,7 @@ export function subscribeToFinanceRecord(callback: (finance: FinanceRecord) => v
           piutangList: Array.isArray(data.piutangList) ? data.piutangList : [],
           hutangMitraList: Array.isArray(data.hutangMitraList) ? data.hutangMitraList : [],
           saldoSantriList: Array.isArray(data.saldoSantriList) ? data.saldoSantriList : [],
+          pengeluaranOperasionalList: Array.isArray(data.pengeluaranOperasionalList) ? data.pengeluaranOperasionalList : [],
         });
       } else {
         // Seed initial default record if empty

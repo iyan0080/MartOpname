@@ -455,15 +455,18 @@ export default function App() {
     }
   };
 
-  // Handler for saving Finance Record (Kas, Hutang, Piutang)
-  const handleSaveFinanceRecord = async (updated: FinanceRecord) => {
+  // Handler for saving Finance Record (Kas, Hutang, Piutang) with auto-save support
+  const handleSaveFinanceRecord = async (updated: FinanceRecord, silent = false) => {
     try {
       await saveFinanceRecordToFirestore(updated);
       setFinance(updated);
-      showToast('Catatan Kas, Hutang, dan Piutang berhasil disimpan ke Firebase Cloud!', 'success');
+      if (!silent) {
+        showToast('Catatan Kas, Hutang, dan Piutang berhasil disimpan ke Firebase Cloud!', 'success');
+      }
     } catch (err) {
       console.error(err);
       showToast('Gagal menyimpan data keuangan ke Firebase Cloud', 'alert');
+      throw err;
     }
   };
 
@@ -1502,10 +1505,10 @@ export default function App() {
                   type="button"
                   onClick={() => setIsFinanceModalOpen(true)}
                   className="px-2.5 sm:px-3 py-1.5 text-xs font-semibold text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 border border-emerald-200 dark:border-emerald-800/80 rounded-lg flex items-center gap-1.5 transition-colors shadow-2xs"
-                  title="Pencatatan Kas, Hutang Mitra & Saldo Santri, serta Piutang Marhalah (Khusus IYAN & HENDRI)"
+                  title="Pencatatan Kas, Belanja Pengeluaran Operasional, Hutang & Piutang (Khusus IYAN & HENDRI)"
                 >
                   <Banknote className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                  <span>Kas & Hutang-Piutang</span>
+                  <span>Keuangan & Operasional</span>
                 </button>
               )}
 
@@ -1771,10 +1774,10 @@ export default function App() {
                       type="button"
                       onClick={() => setIsFinanceModalOpen(true)}
                       className="px-3 py-1.5 text-xs font-semibold text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 border border-emerald-200 dark:border-emerald-800/80 rounded-lg flex items-center gap-1.5 transition-colors"
-                      title="Pencatatan Kas, Hutang & Piutang (Khusus IYAN & HENDRI)"
+                      title="Pencatatan Kas, Pengeluaran Operasional, Hutang & Piutang (Khusus IYAN & HENDRI)"
                     >
                       <Banknote className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                      <span>Kas & Hutang-Piutang</span>
+                      <span>Keuangan & Operasional</span>
                     </button>
                   )}
 

@@ -30,6 +30,10 @@ export function generateBeritaAcaraPDF(
   const totalHutangMitra = (finance.hutangMitraList || []).reduce((sum, h) => sum + (Number(h.jumlah) || 0), 0);
   const totalSaldoSantri = (finance.saldoSantriList || []).reduce((sum, s) => sum + (Number(s.jumlah) || 0), 0);
   const totalKewajiban = totalHutangMitra + totalSaldoSantri;
+  const totalPengeluaranOperasional = (finance.pengeluaranOperasionalList || []).reduce(
+    (sum, p) => sum + (Number(p.jumlah) || 0),
+    0
+  );
 
   const totalAsetFisikBarang = stats?.totalModalInvestasi || 0;
   const totalAsetSistemBarang = stats?.totalModalSystem || 0;
@@ -128,6 +132,11 @@ export function generateBeritaAcaraPDF(
       'Surplus / Pertumbuhan Modal Bersih',
       `${pertumbuhanModal >= 0 ? '+' : ''}${formatRupiah(pertumbuhanModal)}`,
       pertumbuhanModal >= 0 ? 'Surplus / Akumulasi Laba Toko' : 'Defisit Terhadap Modal Awal',
+    ],
+    [
+      'Total Beban Pengeluaran Operasional',
+      formatRupiah(totalPengeluaranOperasional),
+      `${(finance.pengeluaranOperasionalList || []).length} pengeluaran toko dibukukan`,
     ],
   ];
 
@@ -315,6 +324,51 @@ export function generateBeritaAcaraPDF(
     },
     foot: [['', 'TOTAL KEWAJIBAN (HUTANG MITRA + SANTRI)', formatRupiah(totalKewajiban), '']],
     footStyles: { fillColor: [254, 242, 242], fontStyle: 'bold', textColor: [159, 18, 57] },
+    margin: { left: margin, right: margin },
+  });
+
+  // ==================== SECTION V: PENGELUARAN OPERASIONAL DR MART ====================
+  const finalY2_5 = (doc as any).lastAutoTable.finalY + 6;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.setTextColor(15, 23, 42);
+  doc.text('V. RINCIAN PENGELUARAN OPERASIONAL DR MART', margin, finalY2_5);
+
+  const operasionalPdfBody: string[][] = [];
+  (finance.pengeluaranOperasionalList || []).forEach((op, idx) => {
+    operasionalPdfBody.push([
+      String(idx + 1),
+      op.tanggal,
+      op.kategori,
+      op.namaPengeluaran,
+      op.metodeBayar === 'tunai' ? 'Tunai Laci' : 'Bank/QRIS',
+      formatRupiah(op.jumlah),
+      op.keterangan || op.pj || '-',
+    ]);
+  });
+
+  if (operasionalPdfBody.length === 0) {
+    operasionalPdfBody.push(['-', '-', '-', 'Tidak ada catatan pengeluaran operasional toko', '-', 'Rp 0', '-']);
+  }
+
+  autoTable(doc, {
+    startY: finalY2_5 + 2,
+    head: [['NO', 'TANGGAL', 'KATEGORI', 'URAIAN BELANJA', 'METODE', 'NOMINAL (RP)', 'KET / PJ']],
+    body: operasionalPdfBody,
+    theme: 'striped',
+    styles: { fontSize: 7.5, cellPadding: 2 },
+    headStyles: { fillColor: [180, 83, 9], textColor: [255, 255, 255], fontStyle: 'bold' },
+    columnStyles: {
+      0: { cellWidth: 10, halign: 'center' },
+      1: { cellWidth: 20 },
+      2: { cellWidth: 38 },
+      3: { cellWidth: 50 },
+      4: { cellWidth: 20, halign: 'center' },
+      5: { cellWidth: 26, halign: 'right', fontStyle: 'bold' },
+      6: { cellWidth: 18 },
+    },
+    foot: [['', '', '', 'TOTAL BIAYA OPERASIONAL TOKO', '', formatRupiah(totalPengeluaranOperasional), '']],
+    footStyles: { fillColor: [254, 243, 199], fontStyle: 'bold', textColor: [180, 83, 9] },
     margin: { left: margin, right: margin },
   });
 
