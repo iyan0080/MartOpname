@@ -77,7 +77,6 @@ import { LaporanHasilOpnameModal } from './components/LaporanHasilOpnameModal.ts
 import { DuplicateItemsModal } from './components/DuplicateItemsModal.tsx';
 import { MobileBottomDock } from './components/MobileBottomDock.tsx';
 import { MobileMenuSheet } from './components/MobileMenuSheet.tsx';
-import { FinancialTrendChart } from './components/FinancialTrendChart.tsx';
 import { useTheme } from './utils/useTheme.ts';
 import { ThemeToggle } from './components/ThemeToggle.tsx';
 
@@ -1745,18 +1744,8 @@ export default function App() {
             </div>
           </div>
         ) : activeViewTab === 'laporan' ? (
-          /* TAB LAPORAN: 1. VISUALISASI GRAFIK TREN MODAL (RECHARTS) + 2. TABEL SELISIH AUDIT */
+          /* TAB LAPORAN: TABEL SELISIH AUDIT & HASIL OPNAME RESMI */
           <div className="space-y-4 sm:space-y-6">
-            {/* Visualisasi Grafik Tren Nilai Modal Harian / Mingguan */}
-            <FinancialTrendChart
-              items={items}
-              logs={logs}
-              stats={stats}
-              finance={finance}
-              session={session}
-              isDark={isDark}
-            />
-
             {/* Tabel Selisih Stok & Audit Modal */}
             <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-5 shadow-xs space-y-4 transition-colors">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
