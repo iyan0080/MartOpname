@@ -13,6 +13,7 @@ import {
   saveLogToFirestore,
   batchSaveItemsToFirestore,
 } from './src/lib/firebase.ts';
+import { assignSequentialMissingSKUs } from './src/utils/excelUtils.ts';
 
 // Handle uncaught exceptions and unhandled rejections to prevent server crash
 process.on('uncaughtException', (err) => {
@@ -596,14 +597,21 @@ app.post('/api/import', (req: Request, res: Response) => {
   let importedCount = 0;
   let updatedCount = 0;
 
+  // Pastikan SKU diperiksa dan nomor berurutan dibuatkan (mengisi nomor terlewat)
+  const { items: normalizedBatch, report: skuReport } = assignSequentialMissingSKUs(
+    items,
+    store.items,
+    mode
+  );
+
   if (mode === 'replace') {
     // Replace all items
-    store.items = items.map((raw, idx) => ({
+    store.items = normalizedBatch.map((raw, idx) => ({
       id: raw.id || `item-imp-${Date.now()}-${idx}`,
-      sku: String(raw.sku || `SKU-${idx + 1}`).trim().toUpperCase(),
+      sku: String(raw.sku).trim().toUpperCase(),
       namaBarang: String(raw.namaBarang || 'Barang Tanpa Nama').trim(),
       barcode: String(raw.barcode || '').trim(),
-      kategori: String(raw.kategori || 'Sembako').trim(),
+      kategori: String(raw.kategori || 'Umum').trim(),
       quantity: Math.max(0, Number(raw.quantity) || 0),
       quantitySystem: Math.max(0, Number(raw.quantitySystem !== undefined ? raw.quantitySystem : raw.quantity) || 0),
       hargaModal: Math.max(0, Number(raw.hargaModal) || 0),
@@ -614,7 +622,7 @@ app.post('/api/import', (req: Request, res: Response) => {
     importedCount = store.items.length;
   } else {
     // Merge / update existing
-    items.forEach((raw, idx) => {
+    normalizedBatch.forEach((raw, idx) => {
       const rawSku = String(raw.sku || '').trim().toUpperCase();
       const rawBarcode = String(raw.barcode || '').trim();
 
@@ -637,14 +645,14 @@ app.post('/api/import', (req: Request, res: Response) => {
           updatedAt: new Date().toISOString(),
         };
         updatedCount++;
-      } else if (rawSku || raw.namaBarang) {
+      } else {
         // Create new item
         store.items.push({
           id: `item-imp-${Date.now()}-${idx}`,
-          sku: rawSku || `SKU-${Date.now().toString().slice(-4)}-${idx}`,
+          sku: rawSku,
           namaBarang: String(raw.namaBarang || 'Barang Baru').trim(),
           barcode: rawBarcode || `BAR-${Date.now().toString().slice(-6)}-${idx}`,
-          kategori: String(raw.kategori || 'Sembako').trim(),
+          kategori: String(raw.kategori || 'Umum').trim(),
           quantity: Math.max(0, Number(raw.quantity) || 0),
           quantitySystem: Math.max(0, Number(raw.quantitySystem !== undefined ? raw.quantitySystem : raw.quantity) || 0),
           hargaModal: Math.max(0, Number(raw.hargaModal) || 0),

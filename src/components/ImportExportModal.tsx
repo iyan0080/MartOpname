@@ -12,9 +12,17 @@ import {
   Lock,
   ShieldAlert,
   ShieldCheck,
+  Hash,
 } from 'lucide-react';
 import { InventoryItem, InventoryStats } from '../types/inventory.ts';
-import { exportInventoryToXLSX, downloadExcelTemplate, parseExcelFile, formatRupiah } from '../utils/excelUtils.ts';
+import {
+  exportInventoryToXLSX,
+  downloadExcelTemplate,
+  parseExcelFile,
+  formatRupiah,
+  assignSequentialMissingSKUs,
+  SkuInspectionReport,
+} from '../utils/excelUtils.ts';
 
 interface ImportExportModalProps {
   isOpen: boolean;
@@ -41,7 +49,9 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'export' | 'import'>(defaultTab);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [rawParsedItems, setRawParsedItems] = useState<Partial<InventoryItem>[] | null>(null);
   const [parsedPreview, setParsedPreview] = useState<Partial<InventoryItem>[] | null>(null);
+  const [skuInspection, setSkuInspection] = useState<SkuInspectionReport | null>(null);
   const [parseErrors, setParseErrors] = useState<string[]>([]);
   const [importMode, setImportMode] = useState<'merge' | 'replace'>('merge');
   const [dragOver, setDragOver] = useState(false);
@@ -52,7 +62,9 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       setActiveTab(defaultTab || 'import');
+      setRawParsedItems(null);
       setParsedPreview(null);
+      setSkuInspection(null);
       setParseErrors([]);
       setFileName('');
       setImportError(null);
@@ -98,17 +110,30 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
     setFileName(file.name);
     setIsProcessing(true);
     setParseErrors([]);
+    setRawParsedItems(null);
     setParsedPreview(null);
+    setSkuInspection(null);
     setImportError(null);
 
-    const result = await parseExcelFile(file);
+    const result = await parseExcelFile(file, items, importMode);
     setIsProcessing(false);
 
     if (result.success) {
+      setRawParsedItems(result.data);
       setParsedPreview(result.data);
+      setSkuInspection(result.skuInspection || null);
       setParseErrors(result.errors);
     } else {
       setParseErrors(result.errors);
+    }
+  };
+
+  const handleModeChange = (newMode: 'merge' | 'replace') => {
+    setImportMode(newMode);
+    if (rawParsedItems && rawParsedItems.length > 0) {
+      const reassigned = assignSequentialMissingSKUs(rawParsedItems, items, newMode);
+      setParsedPreview(reassigned.items);
+      setSkuInspection(reassigned.report);
     }
   };
 
@@ -405,7 +430,7 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
                           <label className="text-slate-600 dark:text-slate-400 font-medium">Metode Import:</label>
                           <select
                             value={importMode}
-                            onChange={(e) => setImportMode(e.target.value as 'merge' | 'replace')}
+                            onChange={(e) => handleModeChange(e.target.value as 'merge' | 'replace')}
                             className="px-2.5 py-1 text-xs border border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-medium"
                           >
                             <option value="merge">Gabungkan / Update Barang Sama</option>
@@ -413,6 +438,99 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
                           </select>
                         </div>
                       </div>
+
+                      {/* Panel Hasil Pemeriksaan SKU Excel Otomatis */}
+                      {skuInspection && (
+                        <div
+                          className={`p-3.5 rounded-xl border text-xs transition-all ${
+                            skuInspection.missingSkuCount > 0
+                              ? 'bg-blue-50/80 dark:bg-blue-950/40 border-blue-200 dark:border-blue-800/80'
+                              : 'bg-emerald-50/70 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/80'
+                          }`}
+                        >
+                          <div className="flex items-start gap-3">
+                            <div
+                              className={`p-2 rounded-lg shrink-0 ${
+                                skuInspection.missingSkuCount > 0
+                                  ? 'bg-blue-600 text-white shadow-xs'
+                                  : 'bg-emerald-600 text-white shadow-xs'
+                              }`}
+                            >
+                              <Hash className="w-4 h-4" />
+                            </div>
+                            <div className="space-y-1.5 flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <h4 className="font-bold text-slate-900 dark:text-white text-xs">
+                                  Pemeriksaan SKU Excel Selesai
+                                </h4>
+                                {skuInspection.missingSkuCount > 0 ? (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 dark:bg-blue-900/80 text-blue-800 dark:text-blue-200 border border-blue-300 dark:border-blue-700">
+                                    {skuInspection.missingSkuCount} SKU Dibuatkan Otomatis
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 dark:bg-emerald-900/80 text-emerald-800 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-700">
+                                    100% SKU Lengkap
+                                  </span>
+                                )}
+                                {skuInspection.gapFilledCount > 0 && (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 dark:bg-amber-900/80 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-700">
+                                    {skuInspection.gapFilledCount} Mengisi Nomor Terlewat
+                                  </span>
+                                )}
+                              </div>
+
+                              <p className="text-[11px] text-slate-700 dark:text-slate-300 leading-relaxed">
+                                {skuInspection.missingSkuCount > 0 ? (
+                                  <>
+                                    Ditemukan <strong>{skuInspection.missingSkuCount} barang</strong> belum memiliki SKU. Sistem otomatis membuatkan nomor SKU berurutan
+                                    {skuInspection.gapFilledCount > 0 ? (
+                                      <> dengan <strong>mengisi celah nomor urut yang terlewatkan</strong> terlebih dahulu.</>
+                                    ) : (
+                                      <> secara rapi berurutan.</>
+                                    )}
+                                  </>
+                                ) : (
+                                  <>Seluruh <strong>{skuInspection.totalItems} barang</strong> pada file Excel ini telah memiliki kode SKU yang lengkap.</>
+                                )}
+                              </p>
+
+                              {/* Sample list of auto-assigned SKUs */}
+                              {skuInspection.generatedSkus.length > 0 && (
+                                <div className="mt-2 pt-2 border-t border-blue-200/60 dark:border-blue-800/60">
+                                  <p className="text-[10px] font-semibold text-slate-600 dark:text-slate-400 mb-1.5">
+                                    Nomor SKU Berurutan Yang Dialokasikan:
+                                  </p>
+                                  <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto pr-1">
+                                    {skuInspection.generatedSkus.slice(0, 16).map((gen, idx) => (
+                                      <div
+                                        key={idx}
+                                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${
+                                          gen.isGapFilled
+                                            ? 'bg-amber-50 dark:bg-amber-950/60 border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200'
+                                            : 'bg-white dark:bg-slate-800 border-blue-200 dark:border-blue-700 text-blue-900 dark:text-blue-200'
+                                        }`}
+                                        title={`${gen.namaBarang} ${gen.isGapFilled ? '(Mengisi nomor terlewatkan)' : '(Nomor urut baru)'}`}
+                                      >
+                                        <span>{gen.sku}</span>
+                                        {gen.isGapFilled && (
+                                          <span className="text-[8px] font-sans px-1 py-0.2 rounded bg-amber-200 dark:bg-amber-800 text-amber-900 dark:text-amber-100">
+                                            Isi Celah
+                                          </span>
+                                        )}
+                                      </div>
+                                    ))}
+                                    {skuInspection.generatedSkus.length > 16 && (
+                                      <span className="text-[10px] text-slate-500 dark:text-slate-400 self-center">
+                                        + {skuInspection.generatedSkus.length - 16} lainnya
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
 
                       {/* Duplicate Alert Banner */}
                       {(duplicateSkusInImport.size > 0 || duplicateBarcodesInImport.size > 0) && (
@@ -460,8 +578,20 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
                               return (
                                 <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/60">
                                   <td className="px-2.5 py-1 font-bold text-slate-800 dark:text-slate-200">
-                                    <div className="flex items-center gap-1">
+                                    <div className="flex items-center gap-1 flex-wrap">
                                       <span>{row.sku}</span>
+                                      {row.isSkuAutoGenerated && (
+                                        <span
+                                          className={`text-[9px] px-1 py-0.2 rounded font-sans font-bold ${
+                                            row.isGapFilled
+                                              ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                                              : 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300'
+                                          }`}
+                                          title={row.isGapFilled ? 'Mengisi nomor urut yang terlewat' : 'SKU berurutan otomatis'}
+                                        >
+                                          {row.isGapFilled ? 'Auto (Celah)' : 'Auto SKU'}
+                                        </span>
+                                      )}
                                       {isSkuDup && (
                                         <span className="text-[9px] px-1 py-0.2 rounded bg-amber-500/20 text-amber-700 dark:text-amber-300 font-sans font-bold">
                                           Ganda
@@ -549,7 +679,7 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
                           onClick={handleExecuteImport}
                           className="px-6 py-2.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 rounded-lg flex items-center gap-2 shadow-sm transition-colors"
                         >
-                          {isProcessing ? 'Memproses Import...' : `Terapkan Import (${parsedPreview.length} Barang)`}
+                          {isProcessing ? 'Menyimpan ke Cloud...' : `Terapkan & Simpan ke Cloud (${parsedPreview.length} Barang)`}
                           <ArrowRight className="w-4 h-4" />
                         </button>
                       </div>

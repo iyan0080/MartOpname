@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Plus, Minus, Check, Calculator, Package } from 'lucide-react';
+import { X, Plus, Minus, Check, Calculator, Package, Cloud } from 'lucide-react';
 import { InventoryItem } from '../types/inventory.ts';
 import { formatRupiah } from '../utils/excelUtils.ts';
 import { QuantityCalculatorModal } from './QuantityCalculatorModal.tsx';
@@ -63,7 +63,13 @@ export const QuickAdjustDialog: React.FC<QuickAdjustDialogProps> = ({
           {/* Header */}
           <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60">
             <div>
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white leading-tight">Hitung Stok Opname</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white leading-tight">Hitung Stok Opname</h3>
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[9px] font-semibold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300/40">
+                  <Cloud className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400" />
+                  Auto-Save Cloud
+                </span>
+              </div>
               <p className="text-xs text-slate-500 dark:text-slate-400">Petugas: <strong className="text-slate-800 dark:text-slate-200">{activeUser}</strong></p>
             </div>
             <button
@@ -224,7 +230,7 @@ export const QuickAdjustDialog: React.FC<QuickAdjustDialogProps> = ({
                 className="px-5 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg flex items-center gap-1.5 shadow-xs transition-colors"
               >
                 <Check className="w-4 h-4" />
-                {isSubmitting ? 'Menyimpan...' : 'Simpan Hitungan'}
+                {isSubmitting ? 'Menyimpan ke Cloud...' : 'Simpan ke Cloud'}
               </button>
             </div>
           </div>

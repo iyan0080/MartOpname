@@ -11,6 +11,7 @@ import {
   ArrowRight,
   Search,
   Sparkles,
+  Cloud,
 } from 'lucide-react';
 import { InventoryItem } from '../types/inventory.ts';
 
@@ -201,9 +202,15 @@ export const QuantityCalculatorModal: React.FC<QuantityCalculatorModalProps> = (
               <Calculator className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white leading-tight">
-                Kalkulator Hitung Kuantitas Barang Mart
-              </h3>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white leading-tight">
+                  Kalkulator Hitung Kuantitas Barang Mart
+                </h3>
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[9px] font-semibold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300/40">
+                  <Cloud className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400" />
+                  Auto-Save Cloud
+                </span>
+              </div>
               <p className="text-xs text-slate-500 dark:text-slate-400">
                 Hitung jumlah karton, dus, lusin, baris rak, atau pecahan eceran
               </p>

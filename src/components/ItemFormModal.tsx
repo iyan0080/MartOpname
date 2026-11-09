@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, Save, AlertCircle, Calculator, Plus, ListFilter } from 'lucide-react';
+import { X, Save, AlertCircle, Calculator, Plus, ListFilter, Cloud } from 'lucide-react';
 import { InventoryItem } from '../types/inventory.ts';
 import { formatRupiah } from '../utils/excelUtils.ts';
 import { QuantityCalculatorModal } from './QuantityCalculatorModal.tsx';
@@ -174,9 +174,15 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
           {/* Header */}
           <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60">
             <div>
-              <h2 className="text-base font-bold text-slate-900 dark:text-white">
-                {initialData ? 'Edit Data Barang Mart' : 'Tambah Barang Mart Baru'}
-              </h2>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-base font-bold text-slate-900 dark:text-white">
+                  {initialData ? 'Edit Data Barang Mart' : 'Tambah Barang Mart Baru'}
+                </h2>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300/40">
+                  <Cloud className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                  Auto-Save Cloud
+                </span>
+              </div>
               <p className="text-xs text-slate-500 dark:text-slate-400">
                 {initialData ? `Perbarui data untuk SKU: ${initialData.sku}` : 'Masukkan data barang dan kalkulasi modal'}
               </p>
@@ -522,7 +528,7 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
                 className="px-5 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg flex items-center gap-2 shadow-xs transition-colors"
               >
                 <Save className="w-4 h-4" />
-                {isSubmitting ? 'Menyimpan...' : 'Simpan Barang'}
+                {isSubmitting ? 'Menyimpan ke Cloud...' : 'Simpan ke Cloud'}
               </button>
             </div>
           </form>

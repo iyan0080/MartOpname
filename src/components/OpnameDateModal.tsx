@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Calendar, CheckCircle2, Clock, FileText, UserCheck, X } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Calendar, CheckCircle2, Clock, FileText, UserCheck, X, Cloud, Loader2 } from 'lucide-react';
 import { OpnameSession } from '../types/inventory.ts';
 
 interface OpnameDateModalProps {
@@ -23,7 +23,15 @@ export const OpnameDateModal: React.FC<OpnameDateModalProps> = ({
   const [notes, setNotes] = useState<string>(session.notes || '');
   const [picIyan, setPicIyan] = useState<string>(session.picIyan || 'IYAN');
   const [picHendri, setPicHendri] = useState<string>(session.picHendri || 'HENDRI');
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('saved');
+
+  const isHydratedRef = useRef(false);
+  const autoSaveTimerRef = useRef<any>(null);
+  const latestValuesRef = useRef({ opnameDate, title, status, notes, picIyan, picHendri });
+
+  useEffect(() => {
+    latestValuesRef.current = { opnameDate, title, status, notes, picIyan, picHendri };
+  }, [opnameDate, title, status, notes, picIyan, picHendri]);
 
   useEffect(() => {
     if (isOpen) {
@@ -33,30 +41,71 @@ export const OpnameDateModal: React.FC<OpnameDateModalProps> = ({
       setNotes(session.notes || '');
       setPicIyan(session.picIyan || 'IYAN');
       setPicHendri(session.picHendri || 'HENDRI');
+      setSaveStatus('saved');
+      setTimeout(() => {
+        isHydratedRef.current = true;
+      }, 100);
+    } else {
+      isHydratedRef.current = false;
     }
   }, [isOpen, session]);
+
+  const commitSession = useCallback(
+    async (override?: Partial<OpnameSession>) => {
+      setSaveStatus('saving');
+      const v = latestValuesRef.current;
+      const updated: OpnameSession = {
+        ...session,
+        opnameDate: v.opnameDate,
+        title: v.title.trim() || 'Stok Opname Mart Santri',
+        status: v.status,
+        notes: v.notes.trim(),
+        picIyan: v.picIyan.trim() || 'IYAN',
+        picHendri: v.picHendri.trim() || 'HENDRI',
+        updatedBy: activeUser,
+        updatedAt: new Date().toISOString(),
+        ...override,
+      };
+      try {
+        await onSaveSession(updated);
+        setSaveStatus('saved');
+      } catch (err) {
+        console.error('Auto-save session error:', err);
+        setSaveStatus('error');
+      }
+    },
+    [session, activeUser, onSaveSession]
+  );
+
+  // Debounced auto-save whenever any field changes
+  useEffect(() => {
+    if (!isHydratedRef.current) return;
+    setSaveStatus('saving');
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    autoSaveTimerRef.current = setTimeout(() => {
+      commitSession();
+    }, 600);
+
+    return () => {
+      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    };
+  }, [opnameDate, title, status, notes, picIyan, picHendri, commitSession]);
+
+  const handleClose = () => {
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+      commitSession();
+    }
+    onClose();
+  };
 
   if (!isOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsSubmitting(true);
-    try {
-      await onSaveSession({
-        ...session,
-        opnameDate,
-        title: title.trim() || 'Stok Opname Mart Santri',
-        status,
-        notes: notes.trim(),
-        picIyan: picIyan.trim() || 'IYAN',
-        picHendri: picHendri.trim() || 'HENDRI',
-        updatedBy: activeUser,
-        updatedAt: new Date().toISOString(),
-      });
-      onClose();
-    } finally {
-      setIsSubmitting(false);
-    }
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    await commitSession();
+    onClose();
   };
 
   return (
@@ -69,17 +118,39 @@ export const OpnameDateModal: React.FC<OpnameDateModalProps> = ({
               <Calendar className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-slate-800 dark:text-slate-100">
-                Tentukan Tanggal & Sesi Opname
-              </h3>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-base font-bold text-slate-800 dark:text-slate-100">
+                  Tentukan Tanggal & Sesi Opname
+                </h3>
+                {saveStatus === 'saving' && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-300/40 animate-pulse">
+                    <Loader2 className="w-3 h-3 animate-spin text-amber-600" />
+                    Menyimpan...
+                  </span>
+                )}
+                {saveStatus === 'saved' && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300/40">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                    Tersimpan di Cloud
+                  </span>
+                )}
+                {saveStatus === 'error' && (
+                  <span
+                    onClick={() => commitSession()}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-300/40 cursor-pointer"
+                  >
+                    Gagal (Coba Lagi)
+                  </span>
+                )}
+              </div>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Pengaturan periode audit fisik stok barang mart
+                Otomatis tersimpan ke Cloud Firestore setiap ada perubahan
               </p>
             </div>
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleClose}
             className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
           >
             <X className="w-5 h-5" />
@@ -211,18 +282,18 @@ export const OpnameDateModal: React.FC<OpnameDateModalProps> = ({
           <div className="pt-2 flex items-center justify-end gap-2.5 border-t border-slate-200 dark:border-slate-800">
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleClose}
               className="px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
             >
-              Batal
+              Tutup
             </button>
             <button
               type="submit"
-              disabled={isSubmitting}
+              disabled={saveStatus === 'saving'}
               className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 active:scale-98 text-white rounded-xl text-xs font-semibold shadow-md shadow-blue-500/20 transition-all disabled:opacity-50"
             >
               <CheckCircle2 className="w-4 h-4" />
-              {isSubmitting ? 'Menyimpan...' : 'Simpan Tanggal & Sesi'}
+              {saveStatus === 'saving' ? 'Menyimpan ke Cloud...' : 'Simpan & Tutup'}
             </button>
           </div>
         </form>

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, UserPlus, Users, Check, ShieldCheck } from 'lucide-react';
+import { X, UserPlus, Users, Check, ShieldCheck, Cloud } from 'lucide-react';
 import { MartUser } from '../types/inventory.ts';
 
 interface UserManagementModalProps {
@@ -70,7 +70,13 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
               <Users className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-slate-900 dark:text-white">Manajemen Petugas Opname Mart</h2>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-base font-bold text-slate-900 dark:text-white">Manajemen Petugas Opname Mart</h2>
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[9px] font-semibold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300/40">
+                  <Cloud className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400" />
+                  Auto-Save Cloud
+                </span>
+              </div>
               <p className="text-xs text-slate-500 dark:text-slate-400">Pilih akun aktif atau tambahkan petugas opname baru</p>
             </div>
           </div>
@@ -216,7 +222,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
                   className="w-full px-4 py-2.5 text-xs font-semibold text-white bg-slate-900 dark:bg-blue-600 hover:bg-slate-800 dark:hover:bg-blue-700 disabled:opacity-50 rounded-lg flex items-center justify-center gap-2 transition-colors shadow-xs"
                 >
                   <UserPlus className="w-4 h-4" />
-                  {isSubmitting ? 'Menambahkan...' : 'Daftarkan Petugas Baru'}
+                  {isSubmitting ? 'Menyimpan ke Cloud...' : 'Daftarkan Petugas Baru ke Cloud'}
                 </button>
               </div>
             </form>

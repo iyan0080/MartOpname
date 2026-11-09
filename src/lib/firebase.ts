@@ -74,6 +74,23 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   throw new Error(JSON.stringify(errInfo));
 }
 
+// Helper to sanitize payload and strip undefined values recursively so Firestore never throws 'Unsupported field value: undefined'
+export function sanitizeForFirestore<T>(data: T): T {
+  if (data === undefined) return null as any;
+  if (data === null || typeof data !== 'object') return data;
+  if (data instanceof Date) return data.toISOString() as any;
+  if (Array.isArray(data)) {
+    return data.map((item) => sanitizeForFirestore(item)) as any;
+  }
+  const clean: Record<string, any> = {};
+  for (const [key, value] of Object.entries(data as Record<string, any>)) {
+    if (value !== undefined) {
+      clean[key] = sanitizeForFirestore(value);
+    }
+  }
+  return clean as T;
+}
+
 // Startup connection test
 export async function testFirestoreConnection(): Promise<boolean> {
   try {
@@ -120,11 +137,29 @@ export async function fetchLogsFromFirestore(): Promise<ScanAuditLog[]> {
   }
 }
 
-// Save or update an item in Firestore
+// Save or update an item in Firestore (Sanitized & Automatic Cloud Persistence)
 export async function saveItemToFirestore(item: InventoryItem): Promise<void> {
   const path = `items/${item.id}`;
   try {
-    await setDoc(doc(db, 'items', item.id), item);
+    const sanitized = sanitizeForFirestore({
+      ...item,
+      sku: (item.sku || '').trim().toUpperCase(),
+      namaBarang: (item.namaBarang || '').trim(),
+      barcode: (item.barcode || '').trim(),
+      kategori: (item.kategori || 'Umum').trim(),
+      satuan: (item.satuan || 'pcs').trim(),
+      quantity: Math.max(0, Number(item.quantity) || 0),
+      quantitySystem: Math.max(0, Number(item.quantitySystem) || 0),
+      stokAwal: Math.max(0, Number(item.stokAwal !== undefined ? item.stokAwal : item.quantitySystem) || 0),
+      stokMinimum: Math.max(0, Number(item.stokMinimum) || 5),
+      hargaModal: Math.max(0, Number(item.hargaModal) || 0),
+      hargaJual: Math.max(0, Number(item.hargaJual) || 0),
+      status: item.status || 'AKTIF',
+      keterangan: item.keterangan || '',
+      lastUpdatedBy: item.lastUpdatedBy || 'Petugas',
+      updatedAt: item.updatedAt || new Date().toISOString(),
+    });
+    await setDoc(doc(db, 'items', item.id), sanitized);
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
@@ -144,7 +179,7 @@ export async function deleteItemFromFirestore(itemId: string): Promise<void> {
 export async function saveLogToFirestore(logItem: ScanAuditLog): Promise<void> {
   const path = `logs/${logItem.id}`;
   try {
-    await setDoc(doc(db, 'logs', logItem.id), logItem);
+    await setDoc(doc(db, 'logs', logItem.id), sanitizeForFirestore(logItem));
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
@@ -161,7 +196,25 @@ export async function batchSaveItemsToFirestore(items: InventoryItem[]): Promise
       const batch = writeBatch(db);
       chunk.forEach((item) => {
         const itemRef = doc(db, 'items', item.id);
-        batch.set(itemRef, item);
+        const sanitized = sanitizeForFirestore({
+          ...item,
+          sku: (item.sku || '').trim().toUpperCase(),
+          namaBarang: (item.namaBarang || '').trim(),
+          barcode: (item.barcode || '').trim(),
+          kategori: (item.kategori || 'Umum').trim(),
+          satuan: (item.satuan || 'pcs').trim(),
+          quantity: Math.max(0, Number(item.quantity) || 0),
+          quantitySystem: Math.max(0, Number(item.quantitySystem) || 0),
+          stokAwal: Math.max(0, Number(item.stokAwal !== undefined ? item.stokAwal : item.quantitySystem) || 0),
+          stokMinimum: Math.max(0, Number(item.stokMinimum) || 5),
+          hargaModal: Math.max(0, Number(item.hargaModal) || 0),
+          hargaJual: Math.max(0, Number(item.hargaJual) || 0),
+          status: item.status || 'AKTIF',
+          keterangan: item.keterangan || '',
+          lastUpdatedBy: item.lastUpdatedBy || 'Petugas',
+          updatedAt: item.updatedAt || new Date().toISOString(),
+        });
+        batch.set(itemRef, sanitized);
       });
       await batch.commit();
     }
@@ -277,7 +330,7 @@ export function subscribeToFirestoreUsers(
 export async function saveUserToFirestore(user: MartUser): Promise<void> {
   const path = `users/${user.id}`;
   try {
-    await setDoc(doc(db, 'users', user.id), user);
+    await setDoc(doc(db, 'users', user.id), sanitizeForFirestore(user));
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
@@ -338,7 +391,7 @@ export function subscribeToOpnameSession(callback: (session: OpnameSession) => v
         callback(docSnap.data() as OpnameSession);
       } else {
         // Seed default session if not exists
-        setDoc(docRef, DEFAULT_OPNAME_SESSION).catch((err) => {
+        setDoc(docRef, sanitizeForFirestore(DEFAULT_OPNAME_SESSION)).catch((err) => {
           console.error('Failed to seed default opname session:', err);
         });
         callback(DEFAULT_OPNAME_SESSION);
@@ -354,10 +407,10 @@ export async function saveOpnameSessionToFirestore(session: OpnameSession): Prom
   const path = 'settings';
   try {
     const docRef = doc(db, path, 'current_session');
-    await setDoc(docRef, {
+    await setDoc(docRef, sanitizeForFirestore({
       ...session,
       updatedAt: new Date().toISOString(),
-    });
+    }));
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
@@ -403,7 +456,7 @@ export function subscribeToFinanceRecord(callback: (finance: FinanceRecord) => v
         });
       } else {
         // Seed initial default record if empty
-        setDoc(docRef, DEFAULT_FINANCE_RECORD).catch((err) => {
+        setDoc(docRef, sanitizeForFirestore(DEFAULT_FINANCE_RECORD)).catch((err) => {
           console.error('Failed to seed default finance record:', err);
         });
         callback(DEFAULT_FINANCE_RECORD);
@@ -419,10 +472,10 @@ export async function saveFinanceRecordToFirestore(finance: FinanceRecord): Prom
   const path = 'finance';
   try {
     const docRef = doc(db, path, 'current');
-    await setDoc(docRef, {
+    await setDoc(docRef, sanitizeForFirestore({
       ...finance,
       updatedAt: new Date().toISOString(),
-    });
+    }));
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }

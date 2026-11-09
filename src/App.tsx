@@ -60,7 +60,7 @@ import {
 } from './lib/firebase.ts';
 import { INITIAL_ITEMS, INITIAL_USERS } from './data/seedData.ts';
 import { calculateInventoryStats } from './utils/statsUtils.ts';
-import { formatRupiah, exportInventoryToXLSX } from './utils/excelUtils.ts';
+import { formatRupiah, exportInventoryToXLSX, assignSequentialMissingSKUs } from './utils/excelUtils.ts';
 import { playScanSuccessSound, playScanWarningSound } from './utils/soundEffects.ts';
 
 import { BarcodeScannerModal } from './components/BarcodeScannerModal.tsx';
@@ -89,6 +89,21 @@ export default function App() {
   const [activeUsersCount, setActiveUsersCount] = useState<number>(1);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isCloudConnected, setIsCloudConnected] = useState<boolean>(true);
+  // Real-time Cloud Save status tracker
+  const [cloudSyncStatus, setCloudSyncStatus] = useState<'synced' | 'saving' | 'error'>('synced');
+  const syncTimeoutRef = useRef<any>(null);
+
+  const markCloudSaving = () => {
+    if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
+    setCloudSyncStatus('saving');
+  };
+
+  const markCloudSynced = () => {
+    if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
+    syncTimeoutRef.current = setTimeout(() => {
+      setCloudSyncStatus('synced');
+    }, 400);
+  };
 
   // Theme mode: system (default, follows device settings), light, or dark (can be changed manually)
   const { themeMode, isDark, setThemeMode } = useTheme();
@@ -446,11 +461,14 @@ export default function App() {
   // Handler for saving Opname Session (Tanggal Opname)
   const handleSaveOpnameSession = async (updated: OpnameSession) => {
     try {
+      markCloudSaving();
       await saveOpnameSessionToFirestore(updated);
       setSession(updated);
-      showToast(`Tanggal opname berhasil disimpan: ${updated.opnameDate}`, 'success');
+      markCloudSynced();
+      showToast(`Tanggal opname otomatis tersimpan di Cloud: ${updated.opnameDate}`, 'success');
     } catch (err) {
       console.error(err);
+      setCloudSyncStatus('error');
       showToast('Gagal menyimpan tanggal opname ke Firebase Cloud', 'alert');
     }
   };
@@ -458,13 +476,16 @@ export default function App() {
   // Handler for saving Finance Record (Kas, Hutang, Piutang) with auto-save support
   const handleSaveFinanceRecord = async (updated: FinanceRecord, silent = false) => {
     try {
+      markCloudSaving();
       await saveFinanceRecordToFirestore(updated);
       setFinance(updated);
+      markCloudSynced();
       if (!silent) {
-        showToast('Catatan Kas, Hutang, dan Piutang berhasil disimpan ke Firebase Cloud!', 'success');
+        showToast('Catatan Keuangan otomatis tersimpan ke Firebase Cloud!', 'success');
       }
     } catch (err) {
       console.error(err);
+      setCloudSyncStatus('error');
       showToast('Gagal menyimpan data keuangan ke Firebase Cloud', 'alert');
       throw err;
     }
@@ -563,10 +584,13 @@ export default function App() {
       };
 
       try {
+        markCloudSaving();
         await saveItemToFirestore(updatedItem);
         await saveLogToFirestore(log);
+        markCloudSynced();
       } catch (err) {
         console.error('Scan save error:', err);
+        setCloudSyncStatus('error');
       }
     } else {
       if (soundEnabled) playScanWarningSound();
@@ -636,10 +660,13 @@ export default function App() {
         timestamp: now,
       };
       try {
+        markCloudSaving();
         await saveItemToFirestore(updatedItem);
         await saveLogToFirestore(log);
+        markCloudSynced();
         return { success: true, item: updatedItem };
       } catch {
+        setCloudSyncStatus('error');
         return { success: false };
       }
     } else {
@@ -707,10 +734,13 @@ export default function App() {
       timestamp: now,
     };
     try {
+      markCloudSaving();
       await saveItemToFirestore(updatedItem);
       await saveLogToFirestore(log);
+      markCloudSynced();
     } catch (err) {
       console.error('Quick delta error:', err);
+      setCloudSyncStatus('error');
     }
   };
 
@@ -765,8 +795,10 @@ export default function App() {
           timestamp: now,
         };
 
+        markCloudSaving();
         await saveItemToFirestore(updatedItem);
         await saveLogToFirestore(log);
+        markCloudSynced();
         showToast(`Barang ${updatedItem.namaBarang} berhasil diperbarui di Cloud.`, 'success');
         return true;
       } else {
@@ -812,13 +844,16 @@ export default function App() {
           timestamp: now,
         };
 
+        markCloudSaving();
         await saveItemToFirestore(newItem);
         await saveLogToFirestore(log);
+        markCloudSynced();
         showToast(`Barang baru ${newItem.namaBarang} berhasil ditambahkan ke Cloud.`, 'success');
         return true;
       }
     } catch (err) {
       console.error('Error saving item:', err);
+      setCloudSyncStatus('error');
       showToast('Gagal menyimpan barang ke Firebase Cloud.', 'alert');
       return false;
     }
@@ -842,6 +877,7 @@ export default function App() {
     });
 
     try {
+      markCloudSaving();
       await deleteItemFromFirestore(item.id);
       const log: ScanAuditLog = {
         id: `log-${Date.now()}`,
@@ -858,9 +894,11 @@ export default function App() {
         timestamp: new Date().toISOString(),
       };
       await saveLogToFirestore(log);
+      markCloudSynced();
       showToast(`Barang ${item.namaBarang} telah dihapus dari Cloud.`, 'alert');
     } catch (err) {
       console.error('Error deleting item:', err);
+      setCloudSyncStatus('error');
     }
   };
 
@@ -902,12 +940,15 @@ export default function App() {
         timestamp: updatedItem.updatedAt,
       };
 
+      markCloudSaving();
       await saveItemToFirestore(updatedItem);
       await saveLogToFirestore(log);
+      markCloudSynced();
       showToast(`Stok fisik ${target.namaBarang} diset ke ${newQuantity} pcs.`, 'success');
       return true;
     } catch (err) {
       console.error('Error quick adjust:', err);
+      setCloudSyncStatus('error');
       return false;
     }
   };
@@ -925,11 +966,14 @@ export default function App() {
         color: assignedColor,
         createdAt: new Date().toISOString(),
       };
+      markCloudSaving();
       await saveUserToFirestore(newUser);
+      markCloudSynced();
       showToast(`Petugas baru "${cleanName}" berhasil didaftarkan di Cloud.`, 'success');
       handleSelectActiveUser(cleanName);
       return true;
     } catch {
+      setCloudSyncStatus('error');
       return false;
     }
   };
@@ -942,14 +986,22 @@ export default function App() {
     }
 
     try {
+      markCloudSaving();
       let importedCount = 0;
       let updatedCount = 0;
       const now = new Date().toISOString();
 
+      // Pemeriksaan SKU: pastikan seluruh barang memiliki SKU berurutan dan mengisi celah nomor terlewat
+      const { items: normalizedBatch, report: skuReport } = assignSequentialMissingSKUs(
+        importItems,
+        items,
+        mode
+      );
+
       if (mode === 'replace') {
-        const fullItems: InventoryItem[] = importItems.map((raw, idx) => ({
+        const fullItems: InventoryItem[] = normalizedBatch.map((raw, idx) => ({
           id: raw.id || `item-imp-${Date.now()}-${idx}`,
-          sku: String(raw.sku || `SKU-${idx + 1}`).trim().toUpperCase(),
+          sku: String(raw.sku).trim().toUpperCase(),
           namaBarang: String(raw.namaBarang || 'Barang Tanpa Nama').trim(),
           barcode: String(raw.barcode || '').trim(),
           kategori: String(raw.kategori || 'Umum').trim(),
@@ -962,6 +1014,8 @@ export default function App() {
           hargaJual: Math.max(0, Number(raw.hargaJual) || 0),
           status: raw.status || 'AKTIF',
           keterangan: String(raw.keterangan || 'Import XLSX').trim(),
+          isSkuAutoGenerated: raw.isSkuAutoGenerated,
+          isGapFilled: raw.isGapFilled,
           lastUpdatedBy: 'IYAN',
           updatedAt: now,
         }));
@@ -969,7 +1023,7 @@ export default function App() {
         importedCount = fullItems.length;
       } else {
         const updatedList: InventoryItem[] = [...items];
-        importItems.forEach((raw, idx) => {
+        normalizedBatch.forEach((raw, idx) => {
           const rawSku = String(raw.sku || '').trim().toUpperCase();
           const rawBarcode = String(raw.barcode || '').trim();
 
@@ -992,14 +1046,16 @@ export default function App() {
               hargaJual: raw.hargaJual !== undefined ? Math.max(0, Number(raw.hargaJual)) : (existing.hargaJual || 0),
               status: raw.status || existing.status || 'AKTIF',
               keterangan: raw.keterangan !== undefined ? String(raw.keterangan) : existing.keterangan,
+              isSkuAutoGenerated: raw.isSkuAutoGenerated !== undefined ? raw.isSkuAutoGenerated : existing.isSkuAutoGenerated,
+              isGapFilled: raw.isGapFilled !== undefined ? raw.isGapFilled : existing.isGapFilled,
               lastUpdatedBy: 'IYAN',
               updatedAt: now,
             };
             updatedCount++;
-          } else if (rawSku || raw.namaBarang) {
+          } else {
             updatedList.push({
               id: `item-imp-${Date.now()}-${idx}`,
-              sku: rawSku || `SKU-${Date.now().toString().slice(-4)}-${idx}`,
+              sku: rawSku,
               namaBarang: String(raw.namaBarang || 'Barang Baru').trim(),
               barcode: rawBarcode || `BAR-${Date.now().toString().slice(-6)}-${idx}`,
               kategori: String(raw.kategori || 'Umum').trim(),
@@ -1012,6 +1068,8 @@ export default function App() {
               hargaJual: Math.max(0, Number(raw.hargaJual) || 0),
               status: raw.status || 'AKTIF',
               keterangan: String(raw.keterangan || 'Import XLSX').trim(),
+              isSkuAutoGenerated: raw.isSkuAutoGenerated,
+              isGapFilled: raw.isGapFilled,
               lastUpdatedBy: 'IYAN',
               updatedAt: now,
             });
@@ -1032,18 +1090,21 @@ export default function App() {
         previousQty: 0,
         newQty: mode === 'replace' ? importedCount : items.length + importedCount,
         delta: importedCount,
-        notes: `Mode: ${mode}`,
+        notes: `Mode: ${mode}${skuReport.missingSkuCount > 0 ? ` | ${skuReport.missingSkuCount} SKU dibuatkan otomatis (${skuReport.gapFilledCount} isi nomor terlewat)` : ''}`,
         timestamp: now,
       };
       await saveLogToFirestore(log);
+      markCloudSynced();
 
-      showToast(
-        `Import XLSX tersimpan di Firebase Cloud: ${importedCount} baru, ${updatedCount} diperbarui.`,
-        'success'
-      );
+      let toastDetail = `Import XLSX tersimpan di Cloud: ${importedCount} baru, ${updatedCount} diperbarui.`;
+      if (skuReport.missingSkuCount > 0) {
+        toastDetail += ` Dibuatkan ${skuReport.missingSkuCount} SKU berurutan otomatis${skuReport.gapFilledCount > 0 ? ` (${skuReport.gapFilledCount} mengisi nomor terlewat)` : ''}.`;
+      }
+      showToast(toastDetail, 'success');
       return true;
     } catch (err) {
       console.error('Error batch import:', err);
+      setCloudSyncStatus('error');
       showToast('Gagal memproses import data ke Firebase Cloud.', 'alert');
       return false;
     }
@@ -1057,6 +1118,7 @@ export default function App() {
   const executeResetSession = async () => {
     setIsResetConfirmModalOpen(false);
     try {
+      markCloudSaving();
       const now = new Date().toISOString();
       const resetItems: InventoryItem[] = items.map((i) => ({
         ...i,
@@ -1080,9 +1142,11 @@ export default function App() {
         timestamp: now,
       };
       await saveLogToFirestore(resetLog);
+      markCloudSynced();
       showToast('Semua stok fisik telah di-reset ke 0 di Firebase Cloud.', 'alert');
     } catch (err) {
       console.error('Reset error:', err);
+      setCloudSyncStatus('error');
       showToast('Gagal mereset sesi opname di Firebase Cloud.', 'alert');
     }
   };
@@ -1092,6 +1156,7 @@ export default function App() {
     setIsClearDemoModalOpen(false);
     try {
       setIsLoading(true);
+      markCloudSaving();
       await clearAllItemsFromFirestore();
       setItems([]);
       setStats(calculateInventoryStats([]));
@@ -1110,9 +1175,11 @@ export default function App() {
         timestamp: new Date().toISOString(),
       };
       await saveLogToFirestore(log);
+      markCloudSynced();
       showToast('Semua data demo berhasil dihapus dari Firebase Cloud. Database siap diisi barang riil mart.', 'success');
     } catch (err) {
       console.error('Clear all error:', err);
+      setCloudSyncStatus('error');
       showToast('Gagal menghapus data demo di Firebase Cloud.', 'alert');
     } finally {
       setIsLoading(false);
@@ -1303,15 +1370,26 @@ export default function App() {
                   DR MART
                 </span>
                 <span
-                  className={`inline-flex items-center gap-1 px-1 sm:px-1.5 py-0.5 rounded text-[9px] sm:text-[10px] font-semibold font-mono ${
-                    isCloudConnected
-                      ? 'bg-emerald-50 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
-                      : 'bg-amber-50 dark:bg-amber-950/70 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                  className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] sm:text-[10px] font-semibold font-mono ${
+                    cloudSyncStatus === 'saving'
+                      ? 'bg-amber-50 dark:bg-amber-950/70 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-700 animate-pulse'
+                      : cloudSyncStatus === 'error'
+                      ? 'bg-rose-50 dark:bg-rose-950/70 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800'
+                      : 'bg-emerald-50 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
                   }`}
-                  title={isCloudConnected ? "Database tersimpan aman di Firebase Cloud Firestore" : "Menghubungkan ke Firebase Cloud..."}
+                  title={
+                    cloudSyncStatus === 'saving'
+                      ? "Menyimpan perubahan ke Firebase Cloud..."
+                      : "Semua input data otomatis tersimpan ke Firebase Cloud Firestore"
+                  }
                 >
-                  <Cloud className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-emerald-600 dark:text-emerald-400" />
-                  <span className="hidden xs:inline">Cloud DB</span>
+                  <Cloud className={`w-2.5 h-2.5 sm:w-3 sm:h-3 ${cloudSyncStatus === 'saving' ? 'text-amber-600 animate-spin' : 'text-emerald-600 dark:text-emerald-400'}`} />
+                  <span className="hidden xs:inline">
+                    {cloudSyncStatus === 'saving' ? 'Menyimpan...' : 'Otomatis Cloud'}
+                  </span>
+                  <span className="xs:hidden">
+                    {cloudSyncStatus === 'saving' ? 'Sync...' : 'Cloud Aktif'}
+                  </span>
                 </span>
 
                 {/* Tanggal Opname Dilaksanakan Badge */}
@@ -1433,9 +1511,15 @@ export default function App() {
         <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-5 shadow-xs transition-colors">
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
             <div>
-              <h1 className="text-lg sm:text-xl font-bold tracking-tight text-slate-900 dark:text-white leading-tight">
-                Dashboard Stok Opname
-              </h1>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h1 className="text-lg sm:text-xl font-bold tracking-tight text-slate-900 dark:text-white leading-tight">
+                  Dashboard Stok Opname
+                </h1>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300/40">
+                  <Cloud className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                  Semua Input Otomatis Tersimpan di Cloud
+                </span>
+              </div>
               <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                 Audit fisik barang toko mart secara serentak bersama tim kasir & gudang
               </p>

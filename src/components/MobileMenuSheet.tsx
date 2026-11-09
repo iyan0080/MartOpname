@@ -18,6 +18,7 @@ import {
   Store,
   Trash2,
   AlertTriangle,
+  Cloud,
 } from 'lucide-react';
 import { OpnameSession } from '../types/inventory.ts';
 
@@ -92,9 +93,15 @@ export const MobileMenuSheet: React.FC<MobileMenuSheetProps> = ({
               <Store className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">
-                Menu & Aksi DR MART
-              </h3>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">
+                  Menu & Aksi DR MART
+                </h3>
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-emerald-50 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                  <Cloud className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400" />
+                  Auto-Save Cloud
+                </span>
+              </div>
               <p className="text-[11px] text-slate-500">
                 Petugas: <strong className="text-slate-800 dark:text-slate-200">{activeUser}</strong> • Tgl: {session.opnameDate || 'Hari ini'}
               </p>
