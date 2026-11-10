@@ -1,5 +1,62 @@
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+name: Deploy to Firebase Hosting
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+
+jobs:
+  build_and_deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
 
       - name: Install Dependencies
-        run: bun install
+        run: npm ci
+
+      - name: Build Production Bundle
+        run: npm run build
+
+      - name: Verify Hosting output
+        run: test -s dist/index.html
+
+      - name: Verify and Deploy to Firebase Hosting
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_LEVEL_ZEPPLIN_L9V0L }}
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+        run: |
+          if [ -n "$FIREBASE_SERVICE_ACCOUNT" ]; then
+            echo "Deploying using Firebase Service Account..."
+          elif [ -n "$FIREBASE_TOKEN" ]; then
+            echo "Deploying using FIREBASE_TOKEN..."
+            npx firebase-tools deploy --only hosting --token "$FIREBASE_TOKEN" --project level-zepplin-l9v0l
+            exit 0
+          else
+            echo "ERROR: Neither FIREBASE_SERVICE_ACCOUNT_LEVEL_ZEPPLIN_L9V0L nor FIREBASE_TOKEN secret is configured in GitHub repository secrets."
+            echo "Jika Google Cloud memblokir pembuatan Service Account Key ('insufficient permissions to generate private key'), gunakan opsi FIREBASE_TOKEN:"
+            echo "1. Buka terminal di laptop/PC dan jalankan: npx firebase-tools login:ci"
+            echo "2. Login dengan akun Google Anda."
+            echo "3. Salin token yang dihasilkan dan tambahkan ke GitHub Secrets dengan nama: FIREBASE_TOKEN"
+            exit 1
+          fi
+
+      - name: Deploy with Firebase Action (if Service Account is provided)
+        if: env.FIREBASE_SERVICE_ACCOUNT != ''
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_LEVEL_ZEPPLIN_L9V0L }}
+          channelId: live
+          projectId: level-zepplin-l9v0l
