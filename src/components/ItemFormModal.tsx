@@ -232,16 +232,16 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
                 )}
               </div>
 
-              {/* Barcode */}
+              {/* Barcode & QR Code */}
               <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Barcode (EAN-13 / UPC)
+                  Barcode / QR Code (EAN, UPC, QR)
                 </label>
                 <input
                   type="text"
                   value={barcode}
                   onChange={(e) => setBarcode(e.target.value)}
-                  placeholder="Contoh: 8992388123456"
+                  placeholder="Contoh: 8992388123456 atau kode QR"
                   className={`w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border rounded-lg focus:bg-white dark:focus:bg-slate-800 focus:ring-2 font-mono ${
                     duplicateBarcodeItem
                       ? 'border-rose-400 dark:border-rose-500 focus:ring-rose-500 text-rose-900 dark:text-rose-200'

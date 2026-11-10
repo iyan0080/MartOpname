@@ -57,7 +57,7 @@ export const MobileBottomDock: React.FC<MobileBottomDockProps> = ({
             type="button"
             onClick={onOpenScanner}
             className="w-14 h-14 rounded-full bg-blue-600 hover:bg-blue-700 active:scale-90 text-white flex items-center justify-center shadow-lg shadow-blue-600/40 border-4 border-white dark:border-slate-900 transition-all cursor-pointer"
-            title="Buka Kamera Barcode Scanner Langsung"
+            title="Buka Kamera Scan Barcode & QR Code"
           >
             <Camera className="w-6 h-6 animate-pulse" />
           </button>
