@@ -16,6 +16,8 @@ interface InventoryRowProps extends InventoryRowHandlers {
   item: InventoryItem;
   isDuplicateSku: boolean;
   isDuplicateBarcode: boolean;
+  isSelected?: boolean;
+  onSelectRow?: (item: InventoryItem) => void;
 }
 
 export const MobileInventoryCard = React.memo<InventoryRowProps>(({
@@ -175,6 +177,8 @@ export const DesktopInventoryRow = React.memo<InventoryRowProps>(({
   item,
   isDuplicateSku,
   isDuplicateBarcode,
+  isSelected = false,
+  onSelectRow,
   onQuickDelta,
   onQuickAdjust,
   onOpenCalc,
@@ -189,15 +193,36 @@ export const DesktopInventoryRow = React.memo<InventoryRowProps>(({
   const satuan = item.satuan || 'pcs';
 
   return (
-    <tr className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group">
+    <tr
+      className={`transition-colors group ${
+        isSelected
+          ? 'bg-[#dbe1ff]/50 dark:bg-blue-950/40'
+          : 'hover:bg-[#f2f3ff] dark:hover:bg-slate-800/50'
+      }`}
+    >
       {/* SKU & Barcode */}
-      <td className="px-3.5 py-2 font-mono">
+      <td
+        onClick={() => onSelectRow?.(item)}
+        className={`px-3.5 py-2 font-mono ${onSelectRow ? 'cursor-pointer' : ''}`}
+        title={onSelectRow ? 'Klik untuk hitung barang ini di stasiun hitung' : undefined}
+      >
         <div className="flex items-center gap-1.5 flex-wrap">
-          <span className="font-bold text-slate-900 dark:text-slate-100">{item.sku}</span>
+          <span
+            className={`font-bold ${
+              isSelected
+                ? 'text-[#004ac6] dark:text-blue-300'
+                : 'text-slate-900 dark:text-slate-100'
+            }`}
+          >
+            {item.sku}
+          </span>
           {isDuplicateSku && (
             <button
               type="button"
-              onClick={onOpenDuplicate}
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenDuplicate();
+              }}
               className="text-[9px] font-sans font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/40 hover:bg-amber-500/30 active:scale-95 transition-transform"
               title="SKU ini digunakan oleh beberapa barang. Klik untuk rincian."
             >
@@ -210,7 +235,10 @@ export const DesktopInventoryRow = React.memo<InventoryRowProps>(({
           {item.barcode && isDuplicateBarcode && (
             <button
               type="button"
-              onClick={onOpenDuplicate}
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenDuplicate();
+              }}
               className="text-[9px] font-sans font-bold px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-700 dark:text-rose-300 border border-rose-500/40 hover:bg-rose-500/30 active:scale-95 transition-transform"
               title="Barcode ini digunakan oleh beberapa barang. Klik untuk rincian."
             >
@@ -221,7 +249,11 @@ export const DesktopInventoryRow = React.memo<InventoryRowProps>(({
       </td>
 
       {/* Nama Barang & Satuan / Status */}
-      <td className="px-3.5 py-2">
+      <td
+        onClick={() => onSelectRow?.(item)}
+        className={`px-3.5 py-2 ${onSelectRow ? 'cursor-pointer' : ''}`}
+        title={onSelectRow ? 'Klik untuk hitung barang ini di stasiun hitung' : undefined}
+      >
         <div className="flex items-center gap-1.5 flex-wrap">
           <span className="font-medium text-slate-900 dark:text-white leading-tight">
             {item.namaBarang}

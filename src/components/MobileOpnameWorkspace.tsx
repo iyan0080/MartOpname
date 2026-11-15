@@ -169,6 +169,13 @@ export const MobileOpnameWorkspace: React.FC<MobileOpnameWorkspaceProps> = ({
     }
   }, [activeItem?.id]);
 
+  // Keep loose eceran synced if user tapped +1 / -1 directly on a mobile card
+  useEffect(() => {
+    if (activeItem && jmlBox === 0) {
+      setEcerLepas(Math.max(0, activeItem.quantity || 0));
+    }
+  }, [activeItem?.quantity]);
+
   // KPI derived values
   const totalItemsCount = stats?.totalItems ?? items.length;
   const countedItemsCount = stats?.countedItemsCount ?? 0;
