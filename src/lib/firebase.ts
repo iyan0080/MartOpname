@@ -381,7 +381,10 @@ export const DEFAULT_OPNAME_SESSION: OpnameSession = {
   updatedBy: 'Sistem',
 };
 
-export function subscribeToOpnameSession(callback: (session: OpnameSession) => void): () => void {
+export function subscribeToOpnameSession(
+  callback: (session: OpnameSession) => void,
+  onError?: (err: Error) => void
+): () => void {
   const path = 'settings';
   const docRef = doc(db, path, 'current_session');
   return onSnapshot(
@@ -398,7 +401,13 @@ export function subscribeToOpnameSession(callback: (session: OpnameSession) => v
       }
     },
     (error) => {
-      handleFirestoreError(error, OperationType.GET, path);
+      try {
+        handleFirestoreError(error, OperationType.GET, path);
+      } catch (err) {
+        if (onError && err instanceof Error) {
+          onError(err);
+        }
+      }
     }
   );
 }
@@ -433,7 +442,10 @@ export const DEFAULT_FINANCE_RECORD: FinanceRecord = {
   updatedAt: new Date().toISOString(),
 };
 
-export function subscribeToFinanceRecord(callback: (finance: FinanceRecord) => void): () => void {
+export function subscribeToFinanceRecord(
+  callback: (finance: FinanceRecord) => void,
+  onError?: (err: Error) => void
+): () => void {
   const path = 'finance';
   const docRef = doc(db, path, 'current');
   return onSnapshot(
@@ -463,7 +475,13 @@ export function subscribeToFinanceRecord(callback: (finance: FinanceRecord) => v
       }
     },
     (error) => {
-      handleFirestoreError(error, OperationType.GET, path);
+      try {
+        handleFirestoreError(error, OperationType.GET, path);
+      } catch (err) {
+        if (onError && err instanceof Error) {
+          onError(err);
+        }
+      }
     }
   );
 }

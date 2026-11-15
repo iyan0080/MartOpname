@@ -76,6 +76,8 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const isStartingRef = useRef(false);
+  const isOpenRef = useRef(isOpen);
+  isOpenRef.current = isOpen;
   const isProcessingRef = useRef(false);
   const lastScannedTimeRef = useRef<number>(0);
   const containerId = 'interactive-barcode-scanner';
@@ -226,6 +228,18 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
           // Normal frame scan tick
         }
       );
+
+      // If modal closed while camera was initializing, tear it down immediately
+      if (!isOpenRef.current) {
+        try {
+          if (html5QrCode.isScanning) {
+            await html5QrCode.stop();
+          }
+          html5QrCode.clear();
+        } catch {}
+        scannerRef.current = null;
+        return;
+      }
 
       setIsScanning(true);
 
@@ -727,28 +741,18 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
                   </div>
                 </div>
 
-                {/* Quick Multiplier Buttons */}
-                <div className="flex items-center gap-1.5 flex-wrap pt-1 border-t border-slate-100 dark:border-slate-700">
-                  <span className="text-[10px] text-slate-400">Tambah Cepat:</span>
-                  {[
-                    { label: '+1', val: 1 },
-                    { label: '+6 (1/2 Lusin)', val: 6 },
-                    { label: '+12 (Lusin)', val: 12 },
-                    { label: '+24 (Dus)', val: 24 },
-                    { label: '+40 (Karton)', val: 40 },
-                  ].map((preset) => (
-                    <button
-                      key={preset.label}
-                      type="button"
-                      onClick={() => {
-                        setManualCalcQty('');
-                        setPcsExtra((prev) => (typeof prev === 'number' ? prev + preset.val : preset.val));
-                      }}
-                      className="px-2 py-0.5 text-[11px] bg-slate-100 dark:bg-slate-700 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-slate-700 dark:text-slate-200 rounded font-mono font-medium transition-colors cursor-pointer"
-                    >
-                      {preset.label}
-                    </button>
-                  ))}
+                {/* Quick Action Row (+1 Pcs & Reset) */}
+                <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-100 dark:border-slate-700">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setManualCalcQty('');
+                      setPcsExtra((prev) => (typeof prev === 'number' ? prev + 1 : 1));
+                    }}
+                    className="px-2.5 py-1 text-[11px] bg-slate-100 dark:bg-slate-700 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-slate-700 dark:text-slate-200 rounded font-mono font-semibold transition-colors cursor-pointer"
+                  >
+                    +1 Eceran
+                  </button>
                   <button
                     type="button"
                     onClick={() => {
@@ -756,7 +760,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
                       setPcsExtra('');
                       setManualCalcQty(0);
                     }}
-                    className="px-2 py-0.5 text-[11px] text-slate-500 hover:text-red-600 rounded flex items-center gap-0.5 ml-auto cursor-pointer"
+                    className="px-2 py-1 text-[11px] text-slate-500 hover:text-red-600 rounded flex items-center gap-0.5 cursor-pointer"
                     title="Reset hitungan ke 0"
                   >
                     <RotateCcw className="w-3 h-3" /> Reset

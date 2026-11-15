@@ -406,6 +406,43 @@ export function assignSequentialMissingSKUs(
   return { items: resultItems, report };
 }
 
+// Parse numeric Excel cells safely (supports native numbers & formatted Indonesian strings like 'Rp 15.000')
+export function parseExcelNumber(val: any, fallback = 0): number {
+  if (typeof val === 'number') {
+    return isNaN(val) || !isFinite(val) ? fallback : val;
+  }
+  if (val === null || val === undefined) return fallback;
+  const raw = String(val).trim();
+  if (!raw) return fallback;
+  // Strip currency symbol and spaces
+  let cleaned = raw.replace(/rp\.?/gi, '').replace(/\s+/g, '');
+  // Indonesian thousands separator pattern e.g. '15.000' or '1.250.000'
+  if (/^-?\d{1,3}(\.\d{3})+(,\d+)?$/.test(cleaned)) {
+    cleaned = cleaned.replace(/\./g, '').replace(',', '.');
+  } else if (/^-?\d{1,3}(,\d{3})+(\.\d+)?$/.test(cleaned)) {
+    cleaned = cleaned.replace(/,/g, '');
+  } else if (/^-?\d+,\d+$/.test(cleaned)) {
+    cleaned = cleaned.replace(',', '.');
+  }
+  const num = Number(cleaned);
+  return isNaN(num) || !isFinite(num) ? fallback : num;
+}
+
+export function formatCompactRupiah(val: number): string {
+  const abs = Math.abs(val);
+  const sign = val < 0 ? '-' : val > 0 ? '+' : '';
+  if (abs >= 1_000_000_000) {
+    return `${sign}${(abs / 1_000_000_000).toFixed(2).replace(/\.?0+$/, '')}M`;
+  }
+  if (abs >= 1_000_000) {
+    return `${sign}${(abs / 1_000_000).toFixed(2).replace(/\.?0+$/, '')}jt`;
+  }
+  if (abs >= 1_000) {
+    return `${sign}${Math.round(abs / 1_000)}rb`;
+  }
+  return `${sign}Rp ${Math.round(abs)}`;
+}
+
 // Parse uploaded XLSX / XLS file using the 11-column template format
 export async function parseExcelFile(
   file: File,
@@ -486,30 +523,30 @@ export async function parseExcelFile(
           const satuan = rawSatuan.includes('box') || rawSatuan.includes('dus') || rawSatuan.includes('karton') ? 'box' : (rawSatuan || 'pcs');
 
           // 6. harga_modal
-          const modal = Number(normalized['HARGAMODAL'] || normalized['MODAL'] || normalized['HARGABELI'] || 0);
+          const modal = parseExcelNumber(normalized['HARGAMODAL'] ?? normalized['MODAL'] ?? normalized['HARGABELI'], 0);
 
           // 7. harga_jual
-          const jual = Number(normalized['HARGAJUAL'] || normalized['JUAL'] || normalized['HARGA'] || 0);
+          const jual = parseExcelNumber(normalized['HARGAJUAL'] ?? normalized['JUAL'] ?? normalized['HARGA'], 0);
 
           // 8. stok_awal
-          const stokAwal = Number(
-            normalized['STOKAWAL'] ||
-            normalized['STOK_AWAL'] ||
-            normalized['STOKSISTEM'] ||
-            normalized['STOK'] ||
-            normalized['QUANTITY'] ||
-            normalized['QTY'] ||
+          const stokAwal = parseExcelNumber(
+            normalized['STOKAWAL'] ??
+            normalized['STOK_AWAL'] ??
+            normalized['STOKSISTEM'] ??
+            normalized['STOK'] ??
+            normalized['QUANTITY'] ??
+            normalized['QTY'],
             0
           );
 
           // 9. stok_minumum (tolerates 'stok_minumum' and 'stok_minimum')
-          const stokMin = Number(
-            normalized['STOKMINUMUM'] ||
-            normalized['STOKMINIMUM'] ||
-            normalized['STOK_MINUMUM'] ||
-            normalized['STOK_MINIMUM'] ||
-            normalized['MINSTOK'] ||
-            normalized['MINIMUM'] ||
+          const stokMin = parseExcelNumber(
+            normalized['STOKMINUMUM'] ??
+            normalized['STOKMINIMUM'] ??
+            normalized['STOK_MINUMUM'] ??
+            normalized['STOK_MINIMUM'] ??
+            normalized['MINSTOK'] ??
+            normalized['MINIMUM'],
             0
           );
 
