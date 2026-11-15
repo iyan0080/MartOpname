@@ -132,7 +132,7 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
       return;
     }
     if (!namaBarang.trim()) {
-      setError('nama_produk wajib diisi.');
+      setError('Nama barang wajib diisi.');
       return;
     }
 

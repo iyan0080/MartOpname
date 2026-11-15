@@ -1,42 +1,17 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback, useDeferredValue } from 'react';
 import {
-  Barcode,
-  Search,
-  Filter,
   Plus,
-  Download,
-  Upload,
-  RefreshCw,
-  Users,
-  Activity,
-  Layers,
-  ArrowUpDown,
-  ArrowRight,
-  TrendingDown,
-  TrendingUp,
-  CheckCircle,
-  AlertTriangle,
-  Edit2,
   Trash2,
   Volume2,
   VolumeX,
   Store,
   ChevronDown,
-  ChevronUp,
   RotateCcw,
-  Calculator,
-  Eye,
-  EyeOff,
   SlidersHorizontal,
-  Camera,
   X,
-  Cloud,
-  FileSpreadsheet,
+  Activity,
   Calendar,
-  Banknote,
   FileText,
-  Scale,
-  QrCode,
 } from 'lucide-react';
 
 import { InventoryItem, MartUser, ScanAuditLog, InventoryStats, OpnameSession, FinanceRecord } from './types/inventory.ts';
@@ -61,7 +36,7 @@ import {
 } from './lib/firebase.ts';
 import { INITIAL_ITEMS, INITIAL_USERS } from './data/seedData.ts';
 import { calculateInventoryStats } from './utils/statsUtils.ts';
-import { formatRupiah, formatCompactRupiah, exportInventoryToXLSX, assignSequentialMissingSKUs } from './utils/excelUtils.ts';
+import { formatRupiah, exportInventoryToXLSX, assignSequentialMissingSKUs } from './utils/excelUtils.ts';
 import { playScanSuccessSound, playScanWarningSound } from './utils/soundEffects.ts';
 import { findItemsByScan, extractScanCandidates } from './utils/scanUtils.ts';
 
@@ -80,7 +55,7 @@ import { DuplicateItemsModal } from './components/DuplicateItemsModal.tsx';
 import { MobileBottomDock } from './components/MobileBottomDock.tsx';
 import { MobileMenuSheet } from './components/MobileMenuSheet.tsx';
 import { MobileOpnameWorkspace } from './components/MobileOpnameWorkspace.tsx';
-import { DesktopOpnameWorkspace } from './components/DesktopOpnameWorkspace.tsx';
+import { DesktopDashboardWorkspace } from './components/DesktopDashboardWorkspace.tsx';
 import { useTheme } from './utils/useTheme.ts';
 import { ThemeToggle } from './components/ThemeToggle.tsx';
 
@@ -562,13 +537,6 @@ export default function App() {
     let lastKeyTime = Date.now();
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'F2') {
-        e.preventDefault();
-        searchInputRef.current?.focus();
-        searchInputRef.current?.select();
-        return;
-      }
-
       const target = e.target as HTMLElement;
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT') {
         return;
@@ -737,7 +705,7 @@ export default function App() {
     }
   };
 
-  // Submit handler for Barcode & QR Code Search: loads into workstation or matches product name before prompting new item
+  // Submit handler for Barcode & QR Code Search: opens calculator for item or registers new
   const handleBarcodeSearchSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const query = searchQuery.trim();
@@ -751,26 +719,22 @@ export default function App() {
     if (found) {
       setActiveCountingItemId(found.id);
       if (soundEnabled) playScanSuccessSound();
-      showToast(`[Stasiun Hitung] ${found.namaBarang} dimuat ke Kalkulator Box.`, 'success');
+      if (isDesktopViewport) {
+        setCalcTargetItem(found);
+        setIsGlobalCalcOpen(true);
+        showToast(`[Kalkulator] ${found.namaBarang} siap dihitung.`, 'info');
+      } else {
+        showToast(`[Aktif] ${found.namaBarang} dimuat di Kalkulator Box.`, 'success');
+      }
       setSearchQuery('');
-      return;
+    } else {
+      if (soundEnabled) playScanWarningSound();
+      showToast(`Kode "${query}" belum terdaftar. Tambahkan sebagai barang baru?`, 'alert');
+      const candidates = extractScanCandidates(query);
+      setPrefilledBarcode(candidates[0] || query);
+      setEditingItem(null);
+      setIsItemFormOpen(true);
     }
-
-    const qLower = query.toLowerCase();
-    const nameMatches = items.filter((i) => i.namaBarang.toLowerCase().includes(qLower));
-    if (nameMatches.length > 0) {
-      setActiveCountingItemId(nameMatches[0].id);
-      if (soundEnabled) playScanSuccessSound();
-      showToast(`Ditemukan ${nameMatches.length} barang cocok. Memuat: ${nameMatches[0].namaBarang}`, 'info');
-      return;
-    }
-
-    if (soundEnabled) playScanWarningSound();
-    showToast(`Kode "${query}" belum terdaftar. Tambahkan sebagai barang baru?`, 'alert');
-    const candidates = extractScanCandidates(query);
-    setPrefilledBarcode(candidates[0] || query);
-    setEditingItem(null);
-    setIsItemFormOpen(true);
   };
 
   // Quick adjust quantity via table buttons (+1 / -1) with 0ms optimistic update & burst coalescing to Firebase Cloud
@@ -1484,13 +1448,8 @@ export default function App() {
   // Current active user object
   const currentUserObj = users.find((u) => u.name === activeUser) || users[0];
 
-  const totalItemsCount = stats?.totalItems ?? items.length;
-  const countedItemsCount = stats?.countedItemsCount ?? 0;
-  const progressPct = totalItemsCount > 0 ? Math.min(100, (countedItemsCount / totalItemsCount) * 100) : 0;
-  const totalSelisihCount = (stats?.minusCount || 0) + (stats?.plusCount || 0);
-
   return (
-    <div className="min-h-screen lg:h-screen lg:overflow-hidden bg-[#faf8ff] dark:bg-slate-950 text-[#131b2e] dark:text-slate-100 flex flex-col font-sans transition-colors duration-150">
+    <div className="min-h-screen md:h-screen md:overflow-hidden bg-[#faf8ff] dark:bg-slate-950 text-[#131b2e] dark:text-slate-100 flex flex-col font-sans transition-colors duration-150">
       {/* Real-time floating toast (positioned above mobile bottom dock & non-blocking wrapper) */}
       {liveToast && (
         <div className="fixed bottom-24 md:bottom-5 right-3 sm:right-5 left-3 sm:left-auto z-50 flex justify-end pointer-events-none">
@@ -1525,722 +1484,249 @@ export default function App() {
         </div>
       )}
 
-      {/* TOP BAR: Material-3 Mobile Header (<768px) & Material-3 Tablet/PC Station Header (>=768px) */}
-      {!isDesktopViewport ? (
-        <header className="shrink-0 sticky top-0 z-40 pt-safe bg-[#faf8ff]/95 dark:bg-slate-900/95 backdrop-blur-xl shadow-[0_1px_8px_rgba(19,27,46,0.05)] border-b border-[#c3c6d7]/30 dark:border-slate-800 transition-colors">
-          <div className="h-16 px-3.5 flex items-center justify-between gap-2.5">
-            <div className="flex flex-col justify-center min-w-0 flex-1">
-              <div className="flex items-center gap-1.5 min-w-0">
-                <Store className="w-4 h-4 text-[#004ac6] dark:text-blue-400 shrink-0" />
-                <span className="text-sm font-bold text-[#131b2e] dark:text-white truncate">
-                  DR MART
-                </span>
-                <span className="px-1.5 py-0.5 rounded bg-[#eaedff] dark:bg-slate-800 text-[10px] font-mono font-semibold text-[#434655] dark:text-slate-300 truncate max-w-[110px]">
-                  {session.opnameDate}
-                </span>
-              </div>
-              <div className="flex items-center gap-2 mt-0.5">
-                <span className="text-[11px] font-medium text-[#434655] dark:text-slate-400 truncate">
-                  {activeUser} ({currentUserObj?.role || 'Petugas Opname'})
-                </span>
-                <span
-                  className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold shrink-0 ${
-                    cloudSyncStatus === 'saving'
-                      ? 'bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300'
-                      : cloudSyncStatus === 'error'
-                      ? 'bg-[#ffdad6] dark:bg-rose-950/70 text-[#ba1a1a] dark:text-rose-300'
-                      : 'bg-[#eaedff] dark:bg-slate-800 text-[#006243] dark:text-emerald-400'
-                  }`}
-                >
-                  <span
-                    className={`w-1.5 h-1.5 rounded-full ${
-                      cloudSyncStatus === 'saving'
-                        ? 'bg-amber-500 animate-ping'
-                        : cloudSyncStatus === 'error'
-                        ? 'bg-[#ba1a1a]'
-                        : isCloudConnected
-                        ? 'bg-[#006243] dark:bg-emerald-400 animate-pulse'
-                        : 'bg-slate-400'
-                    }`}
-                  />
-                  {cloudSyncStatus === 'saving'
-                    ? 'Menyimpan...'
-                    : cloudSyncStatus === 'error'
-                    ? 'Offline'
-                    : 'Online'}
-                </span>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-1.5 shrink-0">
-              <ThemeToggle
-                themeMode={themeMode}
-                isDark={isDark}
-                onThemeChange={setThemeMode}
-              />
-              <button
-                type="button"
-                onClick={() => setSoundEnabled(!soundEnabled)}
-                title={soundEnabled ? 'Suara Scanner Aktif' : 'Suara Scanner Dimatikan'}
-                className="w-8 h-8 rounded-lg bg-[#eaedff] dark:bg-slate-800 flex items-center justify-center text-[#434655] dark:text-slate-200 active:scale-95 transition-transform"
-              >
-                {soundEnabled ? (
-                  <Volume2 className="w-4 h-4 text-[#004ac6] dark:text-blue-400" />
-                ) : (
-                  <VolumeX className="w-4 h-4 text-[#737686] dark:text-slate-500" />
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={() => setIsAuditDrawerOpen(true)}
-                className="w-8 h-8 rounded-lg bg-[#eaedff] dark:bg-slate-800 flex items-center justify-center text-[#434655] dark:text-slate-200 relative active:scale-95 transition-transform"
-                title="Lihat Aktivitas Scan Real-Time"
-              >
-                <Activity className="w-4 h-4" />
-                {logs.length > 0 && (
-                  <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-[#004ac6] dark:bg-blue-400 rounded-full" />
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={() => setIsUserModalOpen(true)}
-                className="w-8 h-8 rounded-full bg-[#004ac6] hover:bg-[#003ea8] dark:bg-blue-600 text-white flex items-center justify-center text-[11px] font-bold shadow-xs active:scale-95 transition-transform"
-                title="Ganti Petugas Opname"
-              >
-                {activeUser.slice(0, 2)}
-              </button>
-            </div>
-          </div>
-        </header>
+      {isDesktopViewport ? (
+        /* PC & TABLET (>=768px): Material-3 Web Dashboard Shell (Collapsible Sidebar + Fit-to-Screen Main Viewport) */
+        <DesktopDashboardWorkspace
+          items={items}
+          filteredItems={filteredItems}
+          visibleItems={visibleItems}
+          hasMoreVisibleItems={hasMoreVisibleItems}
+          onLoadMore={() => setVisibleLimit((prev) => prev + 120)}
+          onShowAll={() => setVisibleLimit(filteredItems.length)}
+          loadMoreSentinelRef={loadMoreSentinelRef}
+          filteredTotalModal={filteredTotalModal}
+          stats={stats}
+          isLoading={isLoading}
+          session={session}
+          activeUser={activeUser}
+          currentUserObj={currentUserObj}
+          activeUsersCount={activeUsersCount}
+          isCloudConnected={isCloudConnected}
+          cloudSyncStatus={cloudSyncStatus}
+          logs={logs}
+          themeMode={themeMode}
+          isDark={isDark}
+          onThemeChange={setThemeMode}
+          soundEnabled={soundEnabled}
+          onToggleSound={() => setSoundEnabled(!soundEnabled)}
+          activeViewTab={activeViewTab}
+          onSelectViewTab={handleSelectViewTab}
+          searchInputRef={searchInputRef}
+          searchQuery={searchQuery}
+          onSearchQueryChange={setSearchQuery}
+          onBarcodeSearchSubmit={handleBarcodeSearchSubmit}
+          selectedCategory={selectedCategory}
+          onSelectCategory={setSelectedCategory}
+          availableCategories={availableCategories}
+          categoryCounts={categoryCounts}
+          discrepancyFilter={discrepancyFilter}
+          onChangeDiscrepancyFilter={setDiscrepancyFilter}
+          sortBy={sortBy}
+          sortOrder={sortOrder}
+          onChangeSort={(field, order) => {
+            setSortBy(field);
+            setSortOrder(order);
+          }}
+          duplicateAnalysis={duplicateAnalysis}
+          onOpenScanner={() => setIsScannerOpen(true)}
+          onOpenAddItem={() => {
+            setEditingItem(null);
+            setPrefilledBarcode('');
+            setIsItemFormOpen(true);
+          }}
+          onOpenCalculator={() => {
+            setCalcTargetItem(null);
+            setIsGlobalCalcOpen(true);
+          }}
+          onOpenOpnameDate={() => setIsOpnameDateModalOpen(true)}
+          onOpenFinance={() => setIsFinanceModalOpen(true)}
+          onOpenImportExport={(tab) => handleOpenImportExport(tab || 'import')}
+          onOpenExportXlsx={() => handleOpenImportExport('export')}
+          onOpenLaporanHasil={() => setIsLaporanHasilOpnameOpen(true)}
+          onOpenAuditLogs={() => setIsAuditDrawerOpen(true)}
+          onOpenUserModal={() => setIsUserModalOpen(true)}
+          onOpenDisplayOptions={() => setIsDisplayMenuOpen(true)}
+          onOpenDuplicateModal={() => setIsDuplicateModalOpen(true)}
+          showResetButton={showResetButton}
+          onResetSession={handleResetSession}
+          onQuickDelta={handleQuickDelta}
+          onQuickAdjust={handleRowQuickAdjust}
+          onOpenCalcItem={handleRowOpenCalc}
+          onEditItem={handleRowEdit}
+          onDeleteItem={handleRowDelete}
+        />
       ) : (
-        <header className="shrink-0 sticky top-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md shadow-[0_1px_8px_rgba(19,27,46,0.04)] border-b border-[#c3c6d7]/30 dark:border-slate-800 transition-colors">
-          <div className="max-w-[1536px] w-full mx-auto px-4 lg:px-6 h-16 flex items-center justify-between gap-3">
-            {/* Zone 1: Brand Identity & Primary Nav Tabs */}
-            <div className="flex items-center gap-4 min-w-0">
-              <div className="flex items-center gap-2.5 shrink-0">
-                <div className="w-9 h-9 rounded-lg bg-[#2563eb] flex items-center justify-center text-white shadow-sm shrink-0">
-                  <Store className="w-5 h-5" />
+        /* MOBILE (<768px): Material-3 Mobile Shell */
+        <>
+          <header className="shrink-0 sticky top-0 z-40 pt-safe bg-[#faf8ff]/95 dark:bg-slate-900/95 backdrop-blur-xl shadow-[0_1px_8px_rgba(19,27,46,0.05)] border-b border-[#c3c6d7]/30 dark:border-slate-800 transition-colors">
+            <div className="h-16 px-3.5 flex items-center justify-between gap-2.5">
+              <div className="flex flex-col justify-center min-w-0 flex-1">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <Store className="w-4 h-4 text-[#004ac6] dark:text-blue-400 shrink-0" />
+                  <span className="text-sm font-bold text-[#131b2e] dark:text-white truncate">
+                    DR MART
+                  </span>
+                  <span className="px-1.5 py-0.5 rounded bg-[#eaedff] dark:bg-slate-800 text-[10px] font-mono font-semibold text-[#434655] dark:text-slate-300 truncate max-w-[110px]">
+                    {session.opnameDate}
+                  </span>
                 </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-base font-bold tracking-tight text-[#131b2e] dark:text-white whitespace-nowrap">
-                      DR MART
-                    </span>
-                    <span className="px-1.5 py-0.5 rounded bg-[#e2e7ff] dark:bg-slate-800 text-[#004ac6] dark:text-blue-300 font-mono text-[10px] font-semibold">
-                      Cloud
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1 text-[11px] text-[#434655] dark:text-slate-400">
-                    <span className="font-semibold text-[#131b2e] dark:text-slate-200 whitespace-nowrap">Audit Inventaris</span>
-                    <span>·</span>
-                    <span className="font-mono text-[#737686] dark:text-slate-400 whitespace-nowrap">{session.opnameDate}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="h-8 w-px bg-[#e2e7ff] dark:bg-slate-800 hidden lg:block shrink-0" />
-
-              {/* Navigation Tabs */}
-              <nav className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => handleSelectViewTab('opname')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap shrink-0 ${
-                    activeViewTab === 'opname'
-                      ? 'bg-[#2563eb] text-white shadow-xs'
-                      : 'text-[#434655] dark:text-slate-300 hover:bg-[#e2e7ff] dark:hover:bg-slate-800 hover:text-[#131b2e] dark:hover:text-white'
-                  }`}
-                >
-                  Hitung &amp; Opname
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleSelectViewTab('laporan')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap shrink-0 ${
-                    activeViewTab === 'laporan'
-                      ? 'bg-[#2563eb] text-white shadow-xs'
-                      : 'text-[#434655] dark:text-slate-300 hover:bg-[#e2e7ff] dark:hover:bg-slate-800 hover:text-[#131b2e] dark:hover:text-white'
-                  }`}
-                >
-                  Daftar Selisih ({totalSelisihCount})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleSelectViewTab('kategori')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap shrink-0 ${
-                    activeViewTab === 'kategori'
-                      ? 'bg-[#2563eb] text-white shadow-xs'
-                      : 'text-[#434655] dark:text-slate-300 hover:bg-[#e2e7ff] dark:hover:bg-slate-800 hover:text-[#131b2e] dark:hover:text-white'
-                  }`}
-                >
-                  Rekap Kategori
-                </button>
-              </nav>
-            </div>
-
-            {/* Zone 3: Cloud Sync Telemetry, Quick Utilities & Staff Profile */}
-            <div className="flex items-center gap-2 shrink-0">
-              {/* Cloud Sync Chip */}
-              <div
-                className={`hidden xl:flex items-center gap-2 px-2.5 py-1 rounded-lg ${
-                  cloudSyncStatus === 'saving'
-                    ? 'bg-amber-50 dark:bg-amber-950/60'
-                    : cloudSyncStatus === 'error'
-                    ? 'bg-[#ffdad6]/60 dark:bg-rose-950/60'
-                    : 'bg-[#f2f3ff] dark:bg-slate-800'
-                }`}
-                title="Semua data yang diinput otomatis tersimpan ke Firebase Cloud Firestore"
-              >
-                <span
-                  className={`w-2 h-2 rounded-full ${
-                    cloudSyncStatus === 'saving'
-                      ? 'bg-amber-500 animate-ping'
-                      : cloudSyncStatus === 'error'
-                      ? 'bg-[#ba1a1a]'
-                      : isCloudConnected
-                      ? 'bg-[#007d57] dark:bg-emerald-400 animate-pulse'
-                      : 'bg-slate-400'
-                  }`}
-                />
-                <div className="text-left leading-tight">
-                  <div className="flex items-center gap-1">
-                    <span
-                      className={`text-[10px] font-bold uppercase tracking-wider ${
-                        cloudSyncStatus === 'saving'
-                          ? 'text-amber-700 dark:text-amber-300'
-                          : cloudSyncStatus === 'error'
-                          ? 'text-[#ba1a1a] dark:text-rose-300'
-                          : 'text-[#006243] dark:text-emerald-400'
-                      }`}
-                    >
-                      {cloudSyncStatus === 'saving'
-                        ? 'Menyimpan Cloud...'
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span className="text-[11px] font-medium text-[#434655] dark:text-slate-400 truncate">
+                    {activeUser} ({currentUserObj?.role || 'Petugas Opname'})
+                  </span>
+                  <span
+                    className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold shrink-0 ${
+                      cloudSyncStatus === 'saving'
+                        ? 'bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300'
                         : cloudSyncStatus === 'error'
-                        ? 'Offline / Retry'
-                        : 'Cloud Sync OK'}
-                    </span>
-                    <Cloud className="w-3 h-3 text-[#006243] dark:text-emerald-400" />
-                  </div>
-                  <span className="font-mono text-[10px] text-[#434655] dark:text-slate-400">
-                    {activeUsersCount} Online
+                        ? 'bg-[#ffdad6] dark:bg-rose-950/70 text-[#ba1a1a] dark:text-rose-300'
+                        : 'bg-[#eaedff] dark:bg-slate-800 text-[#006243] dark:text-emerald-400'
+                    }`}
+                  >
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full ${
+                        cloudSyncStatus === 'saving'
+                          ? 'bg-amber-500 animate-ping'
+                          : cloudSyncStatus === 'error'
+                          ? 'bg-[#ba1a1a]'
+                          : isCloudConnected
+                          ? 'bg-[#006243] dark:bg-emerald-400 animate-pulse'
+                          : 'bg-slate-400'
+                      }`}
+                    />
+                    {cloudSyncStatus === 'saving'
+                      ? 'Menyimpan...'
+                      : cloudSyncStatus === 'error'
+                      ? 'Offline'
+                      : 'Online'}
                   </span>
                 </div>
               </div>
 
-              <ThemeToggle
-                themeMode={themeMode}
-                isDark={isDark}
-                onThemeChange={setThemeMode}
-              />
-
-              <button
-                type="button"
-                onClick={() => setSoundEnabled(!soundEnabled)}
-                title={soundEnabled ? 'Suara Scanner Aktif' : 'Suara Scanner Dimatikan'}
-                className={`p-2 rounded-lg transition-colors ${
-                  soundEnabled
-                    ? 'bg-[#eaedff] dark:bg-slate-800 text-[#004ac6] dark:text-blue-400 hover:bg-[#e2e7ff] dark:hover:bg-slate-700'
-                    : 'bg-[#f2f3ff] dark:bg-slate-800 text-[#737686] dark:text-slate-500 hover:bg-[#eaedff] dark:hover:bg-slate-700'
-                }`}
-              >
-                {soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setIsAuditDrawerOpen(true)}
-                className="p-2 rounded-lg bg-[#eaedff] dark:bg-slate-800 hover:bg-[#e2e7ff] dark:hover:bg-slate-700 text-[#131b2e] dark:text-slate-200 relative transition-colors"
-                title="Lihat Aktivitas Scan Real-Time"
-              >
-                <Activity className="w-4 h-4" />
-                {logs.length > 0 && (
-                  <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-[#004ac6] dark:bg-blue-400 rounded-full" />
-                )}
-              </button>
-
-              {/* Staff Profile Button */}
-              <button
-                type="button"
-                onClick={() => setIsUserModalOpen(true)}
-                className="flex items-center gap-2 bg-[#eaedff] dark:bg-slate-800 hover:bg-[#e2e7ff] dark:hover:bg-slate-700 px-2.5 py-1.5 rounded-lg transition-colors"
-                title="Ganti Petugas Opname"
-              >
-                <div className="text-right hidden lg:block">
-                  <div className="text-xs font-bold text-[#131b2e] dark:text-white leading-tight">
-                    {activeUser}
-                  </div>
-                  <div className="text-[10px] text-[#434655] dark:text-slate-400 flex items-center justify-end gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-[#007d57] dark:bg-emerald-400" />
-                    <span className="truncate max-w-[95px]">{currentUserObj?.role || 'Petugas'}</span>
-                  </div>
-                </div>
-                <div
-                  className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0 shadow-xs"
-                  style={{ backgroundColor: currentUserObj?.color || '#004ac6' }}
+              <div className="flex items-center gap-1.5 shrink-0">
+                <ThemeToggle
+                  themeMode={themeMode}
+                  isDark={isDark}
+                  onThemeChange={setThemeMode}
+                />
+                <button
+                  type="button"
+                  onClick={() => setSoundEnabled(!soundEnabled)}
+                  title={soundEnabled ? 'Suara Scanner Aktif' : 'Suara Scanner Dimatikan'}
+                  className="w-8 h-8 rounded-lg bg-[#eaedff] dark:bg-slate-800 flex items-center justify-center text-[#434655] dark:text-slate-200 active:scale-95 transition-transform"
+                >
+                  {soundEnabled ? (
+                    <Volume2 className="w-4 h-4 text-[#004ac6] dark:text-blue-400" />
+                  ) : (
+                    <VolumeX className="w-4 h-4 text-[#737686] dark:text-slate-500" />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsAuditDrawerOpen(true)}
+                  className="w-8 h-8 rounded-lg bg-[#eaedff] dark:bg-slate-800 flex items-center justify-center text-[#434655] dark:text-slate-200 relative active:scale-95 transition-transform"
+                  title="Lihat Aktivitas Scan Real-Time"
+                >
+                  <Activity className="w-4 h-4" />
+                  {logs.length > 0 && (
+                    <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-[#004ac6] dark:bg-blue-400 rounded-full" />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsUserModalOpen(true)}
+                  className="w-8 h-8 rounded-full bg-[#004ac6] hover:bg-[#003ea8] dark:bg-blue-600 text-white flex items-center justify-center text-[11px] font-bold shadow-xs active:scale-95 transition-transform"
+                  title="Ganti Petugas Opname"
                 >
                   {activeUser.slice(0, 2)}
-                </div>
-                <ChevronDown className="w-3.5 h-3.5 text-[#737686] dark:text-slate-400" />
-              </button>
-            </div>
-          </div>
-        </header>
-      )}
-
-      {/* Main Content Viewport: Scrolls naturally on <1024px (Mobile & Portrait Tablet), Fit-to-screen on >=1024px (Landscape Tablet & PC) */}
-      <main className="flex-1 min-h-0 max-w-[1536px] w-full mx-auto px-2.5 sm:px-4 lg:px-6 pt-2 sm:pt-3 pb-28 md:pb-3 flex flex-col overflow-visible lg:overflow-hidden">
-
-        {/* OPERATIONAL SUMMARY RIBBON & ACTION TOOLBAR (Tablet/PC >=768px OR mobile sub-tabs) */}
-        {!isDesktopViewport && activeViewTab !== 'opname' && (
-          <div className="shrink-0 bg-white dark:bg-slate-900 rounded-xl border border-[#c3c6d7]/40 dark:border-slate-800 p-3 shadow-xs mb-2.5 transition-colors">
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center justify-between gap-2">
-                <div>
-                  <h1 className="text-base font-bold text-[#131b2e] dark:text-white leading-tight">
-                    Dashboard Stok Opname
-                  </h1>
-                  <p className="text-[11px] text-[#434655] dark:text-slate-400">
-                    Audit fisik barang toko mart otomatis tersimpan ke Cloud
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setEditingItem(null);
-                  setPrefilledBarcode('');
-                  setIsItemFormOpen(true);
-                }}
-                className="w-full py-2.5 px-4 text-xs font-bold text-white bg-[#004ac6] hover:bg-[#003ea8] active:scale-98 rounded-xl flex items-center justify-center gap-1.5 shadow-xs transition-transform"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Tambah Barang</span>
-              </button>
-            </div>
-          </div>
-        )}
-
-        {isDesktopViewport && (
-          <div className="shrink-0 bg-white dark:bg-slate-900 rounded-xl border border-[#c3c6d7]/40 dark:border-slate-800 px-3.5 py-2.5 shadow-xs mb-2.5 flex flex-col gap-2 transition-colors">
-            {/* Top Row: Session Ribbon + Progress Bar + Live KPI Badges */}
-            <div className="flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-2.5">
-              {/* Session Name & Progress Bar */}
-              <div className="flex flex-wrap items-center gap-3 min-w-0">
-                <button
-                  type="button"
-                  onClick={() => setIsOpnameDateModalOpen(true)}
-                  className="flex items-center gap-2 bg-[#dbe1ff]/45 dark:bg-blue-950/50 hover:bg-[#dbe1ff]/75 dark:hover:bg-blue-900/50 px-3 py-1.5 rounded-lg text-left transition-colors"
-                  title="Klik untuk ubah Tanggal & Sesi Opname"
-                >
-                  <Calendar className="w-4 h-4 text-[#004ac6] dark:text-blue-400 shrink-0" />
-                  <div>
-                    <div className="text-[10px] text-[#003ea8] dark:text-blue-300 uppercase tracking-wider font-bold">
-                      Sesi Aktif Stok Opname
-                    </div>
-                    <div className="text-xs font-bold text-[#131b2e] dark:text-white truncate">
-                      {session.opnameDate}{' '}
-                      <span className="text-[#434655] dark:text-slate-400 font-mono font-normal">
-                        ({totalItemsCount.toLocaleString('id-ID')} SKU)
-                      </span>
-                    </div>
-                  </div>
                 </button>
-
-                <div className="flex flex-col gap-1 min-w-[200px] flex-1 xl:flex-initial">
-                  <div className="flex justify-between items-center text-[11px]">
-                    <span className="font-semibold text-[#004ac6] dark:text-blue-400">Progress Audit</span>
-                    <span className="font-mono font-semibold text-[#131b2e] dark:text-slate-200 tabular-nums">
-                      {countedItemsCount.toLocaleString('id-ID')} / {totalItemsCount.toLocaleString('id-ID')} SKU{' '}
-                      <strong className="text-[#004ac6] dark:text-blue-400">({progressPct.toFixed(1)}%)</strong>
-                    </span>
-                  </div>
-                  <div className="w-full bg-[#e2e7ff] dark:bg-slate-800 h-2 rounded-full overflow-hidden">
-                    <div
-                      className="bg-[#004ac6] dark:bg-blue-500 h-full rounded-full transition-all duration-500"
-                      style={{ width: `${progressPct}%` }}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Live KPI Badges */}
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    handleSelectViewTab('opname');
-                    setDiscrepancyFilter((prev) => (prev === 'MINUS' ? 'ALL' : 'MINUS'));
-                  }}
-                  className="flex items-center gap-1.5 bg-[#ffdad6]/55 dark:bg-rose-950/50 hover:bg-[#ffdad6]/85 px-2.5 py-1 rounded-lg transition-colors text-left"
-                  title="Klik untuk memfilter barang selisih minus"
-                >
-                  <AlertTriangle className="w-4 h-4 text-[#ba1a1a] dark:text-rose-400 shrink-0" />
-                  <div>
-                    <div className="text-[9px] text-[#ba1a1a] dark:text-rose-300 font-bold uppercase">Perhatian</div>
-                    <div className="font-mono text-xs text-[#93000a] dark:text-rose-200 font-bold tabular-nums">
-                      {totalSelisihCount} Selisih
-                    </div>
-                  </div>
-                </button>
-
-                <div
-                  className="flex items-center gap-1.5 bg-[#eaedff] dark:bg-slate-800 px-2.5 py-1 rounded-lg"
-                  title={`Selisih Nilai Modal: ${formatRupiah(stats?.selisihModal || 0)}`}
-                >
-                  <Banknote className="w-4 h-4 text-[#737686] dark:text-slate-400 shrink-0" />
-                  <div>
-                    <div className="text-[9px] text-[#434655] dark:text-slate-400 font-semibold uppercase">Selisih Nilai</div>
-                    <div
-                      className={`font-mono text-xs font-bold tabular-nums ${
-                        (stats?.selisihModal || 0) < 0
-                          ? 'text-[#ba1a1a] dark:text-rose-400'
-                          : 'text-[#006243] dark:text-emerald-400'
-                      }`}
-                    >
-                      {formatCompactRupiah(stats?.selisihModal || 0)}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-1.5 bg-[#85f8c4]/30 dark:bg-emerald-950/50 px-2.5 py-1 rounded-lg">
-                  <Cloud className="w-4 h-4 text-[#006243] dark:text-emerald-400 shrink-0" />
-                  <div>
-                    <div className="text-[9px] text-[#006243] dark:text-emerald-300 font-bold uppercase">Total Modal Fisik</div>
-                    <div className="font-mono text-xs text-[#131b2e] dark:text-white font-bold tabular-nums">
-                      {formatRupiah(stats?.totalModalInvestasi || 0)}
-                    </div>
-                  </div>
-                </div>
               </div>
             </div>
+          </header>
 
-            {/* Bottom Row: Clean Single-Line Action Toolbar */}
-            <div className="flex items-center flex-wrap gap-1.5 pt-1.5 border-t border-[#eaedff] dark:border-slate-800">
-              <button
-                type="button"
-                onClick={() => {
-                  setEditingItem(null);
-                  setPrefilledBarcode('');
-                  setIsItemFormOpen(true);
-                }}
-                className="px-2.5 py-1.5 text-xs font-semibold text-white bg-[#004ac6] hover:bg-[#003ea8] dark:bg-blue-600 dark:hover:bg-blue-700 rounded-lg flex items-center gap-1.5 shadow-2xs transition-colors"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Tambah Barang</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setCalcTargetItem(null);
-                  setIsGlobalCalcOpen(true);
-                }}
-                className="px-2.5 py-1.5 text-xs font-semibold text-[#003ea8] dark:text-blue-300 bg-[#dbe1ff]/60 dark:bg-blue-950/60 hover:bg-[#dbe1ff] dark:hover:bg-blue-900/60 rounded-lg flex items-center gap-1.5 transition-colors"
-                title="Buka modal kalkulator kuantitas lengkap"
-              >
-                <Calculator className="w-3.5 h-3.5" />
-                <span>Kalkulator</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setIsOpnameDateModalOpen(true)}
-                className="px-2.5 py-1.5 text-xs font-semibold text-[#434655] dark:text-slate-300 bg-[#f2f3ff] dark:bg-slate-800 hover:bg-[#eaedff] dark:hover:bg-slate-700 rounded-lg flex items-center gap-1.5 transition-colors"
-                title="Tentukan Tanggal & Periode Pelaksanaan Opname"
-              >
-                <Calendar className="w-3.5 h-3.5 text-[#004ac6] dark:text-blue-400" />
-                <span>Tgl Opname</span>
-              </button>
-
-              {(activeUser === 'IYAN' || activeUser === 'HENDRI') && (
-                <button
-                  type="button"
-                  onClick={() => setIsFinanceModalOpen(true)}
-                  className="px-2.5 py-1.5 text-xs font-semibold text-[#006243] dark:text-emerald-300 bg-[#85f8c4]/30 dark:bg-emerald-950/60 hover:bg-[#85f8c4]/50 dark:hover:bg-emerald-900/60 rounded-lg flex items-center gap-1.5 transition-colors"
-                  title="Pencatatan Kas, Belanja Pengeluaran Operasional, Hutang & Piutang (Khusus IYAN & HENDRI)"
-                >
-                  <Banknote className="w-3.5 h-3.5" />
-                  <span>Keuangan &amp; Operasional</span>
-                </button>
-              )}
-
-              <button
-                type="button"
-                onClick={() => setIsLaporanHasilOpnameOpen(true)}
-                className="px-2.5 py-1.5 text-xs font-semibold text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/60 hover:bg-purple-100 dark:hover:bg-purple-900/60 rounded-lg flex items-center gap-1.5 transition-colors"
-                title="Buka Laporan Hasil Opname Resmi, Neraca Keuangan Mart & Berita Acara"
-              >
-                <FileText className="w-3.5 h-3.5" />
-                <span>Hasil Opname</span>
-              </button>
-
-              {activeUser === 'IYAN' && (
-                <button
-                  type="button"
-                  onClick={() => handleOpenImportExport('import')}
-                  className="px-2.5 py-1.5 text-xs font-semibold text-[#004b73] dark:text-sky-300 bg-[#cce5ff]/60 dark:bg-sky-950/60 hover:bg-[#cce5ff] dark:hover:bg-sky-900/60 rounded-lg flex items-center gap-1.5 transition-colors"
-                  title="Import & Export Data Stok Opname XLSX (Khusus Petugas IYAN)"
-                >
-                  <FileSpreadsheet className="w-3.5 h-3.5" />
-                  <span>Import/Export Data XLSX</span>
-                </button>
-              )}
-
-              <button
-                type="button"
-                onClick={() => setIsDisplayMenuOpen(true)}
-                className="px-2.5 py-1.5 text-xs font-semibold text-[#434655] dark:text-slate-300 bg-[#f2f3ff] dark:bg-slate-800 hover:bg-[#eaedff] dark:hover:bg-slate-700 rounded-lg flex items-center gap-1.5 transition-colors"
-                title="Opsi tampilan bagian dashboard"
-              >
-                <SlidersHorizontal className="w-3.5 h-3.5" />
-                <span>Opsi</span>
-              </button>
-
-              {isDisplayMenuOpen && (
-                <div
-                  className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150"
-                  onClick={() => setIsDisplayMenuOpen(false)}
-                >
-                  <div
-                    className="relative w-full max-w-sm bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-5 space-y-4"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-                      <div className="flex items-center gap-2.5">
-                        <div className="p-2 bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 rounded-lg">
-                          <SlidersHorizontal className="w-4 h-4" />
-                        </div>
-                        <div>
-                          <h3 className="text-sm font-bold text-slate-900 dark:text-white leading-tight">
-                            Opsi Tampilan Dashboard
-                          </h3>
-                          <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                            Sesuaikan bagian tampilan yang aktif di layar
-                          </p>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setIsDisplayMenuOpen(false)}
-                        className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-lg"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-
-                    <div className="space-y-2.5">
-                      <label className="flex items-start gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer transition-colors select-none">
-                        <input
-                          type="checkbox"
-                          checked={showResetButton}
-                          onChange={toggleResetButton}
-                          className="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 shrink-0"
-                        />
-                        <div className="flex-1 text-xs">
-                          <span className="font-semibold text-slate-900 dark:text-white block">
-                            Tombol Reset Sesi Opname
-                          </span>
-                          <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 block">
-                            Tampilkan tombol merah untuk mereset seluruh hitungan fisik ke 0 saat sesi audit baru
-                          </span>
-                        </div>
-                      </label>
-                    </div>
-
-                    <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsDisplayMenuOpen(false);
-                          setIsClearDemoModalOpen(true);
-                        }}
-                        className="w-full py-2 px-3 text-xs font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-xl border border-red-200 dark:border-red-900/60 flex items-center justify-center gap-2 transition-colors"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        <span>Hapus Semua Data Demo (0 Barang)</span>
-                      </button>
-                    </div>
-
-                    <div className="pt-1">
-                      <button
-                        type="button"
-                        onClick={() => setIsDisplayMenuOpen(false)}
-                        className="w-full py-2.5 text-xs font-semibold text-white bg-[#004ac6] hover:bg-[#003ea8] rounded-xl transition-colors shadow-xs"
-                      >
-                        Selesai &amp; Simpan Pilihan
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {showResetButton && (
-                <button
-                  type="button"
-                  onClick={handleResetSession}
-                  className="px-2.5 py-1.5 text-xs font-semibold text-[#ba1a1a] dark:text-red-400 bg-[#ffdad6]/55 dark:bg-red-950/40 hover:bg-[#ffdad6] dark:hover:bg-red-900/50 rounded-lg flex items-center gap-1.5 transition-colors ml-auto"
-                  title="Reset fisik ke 0 untuk opname baru"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  <span>Reset Sesi Opname</span>
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* VIEW TABS / SECTION SWITCH */}
-        {activeViewTab === 'kategori' ? (
-          /* REKAP MODAL PER KATEGORI VIEW */
-          <div className="bg-white dark:bg-slate-900 rounded-xl border border-[#c3c6d7]/40 dark:border-slate-800 p-3 sm:p-4 shadow-xs flex-1 min-h-0 flex flex-col lg:overflow-hidden transition-colors">
-            <div className="shrink-0 flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-[#eaedff] dark:border-slate-800">
-              <div>
-                <h2 className="text-sm sm:text-base font-bold text-[#131b2e] dark:text-white">
-                  Rekapitulasi Modal per Kategori
-                </h2>
-                <p className="text-xs text-[#434655] dark:text-slate-400">
-                  Distribusi nilai modal barang yang diinvestasikan pada tiap kategori · Klik baris untuk filter stok
-                </p>
-              </div>
-              <span className="px-2.5 py-1 rounded-lg bg-[#f2f3ff] dark:bg-slate-800 font-mono text-[11px] font-bold text-[#004ac6] dark:text-blue-400">
-                {stats?.categorySummary.length || 0} Kategori
-              </span>
-            </div>
-
-            {!isDesktopViewport ? (
-              <div className="space-y-2.5 pt-3">
-                {stats?.categorySummary.map((cat) => {
-                  const pct = stats.totalModalInvestasi > 0
-                    ? ((cat.totalModal / stats.totalModalInvestasi) * 100).toFixed(1)
-                    : '0';
-                  return (
-                    <button
-                      type="button"
-                      key={cat.kategori}
-                      onClick={() => {
-                        setSelectedCategory(cat.kategori);
-                        handleSelectViewTab('opname');
-                      }}
-                      className="w-full text-left p-3 bg-[#f2f3ff] dark:bg-slate-800/60 rounded-xl border border-[#c3c6d7]/40 dark:border-slate-700/80 space-y-1.5 active:scale-[0.99] transition-transform"
-                    >
-                      <div className="flex items-center justify-between">
-                        <h4 className="font-bold text-xs text-[#131b2e] dark:text-white">{cat.kategori}</h4>
-                        <span className="text-xs font-mono font-bold text-[#006243] dark:text-emerald-400">
-                          {formatRupiah(cat.totalModal)}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between text-[11px] text-[#434655] dark:text-slate-400 pt-1 border-t border-[#c3c6d7]/30 dark:border-slate-700/60">
-                        <span>{cat.itemCount} SKU • {cat.totalQty} unit</span>
-                        <span className="font-semibold text-[#131b2e] dark:text-slate-300">{pct}% dari modal</span>
-                      </div>
-                    </button>
-                  );
-                })}
-                <div className="p-3 bg-[#eaedff] dark:bg-slate-800 rounded-xl border border-[#c3c6d7]/60 dark:border-slate-700 flex items-center justify-between font-bold text-xs">
-                  <span>TOTAL SEMUA</span>
-                  <span className="font-mono text-[#006243] dark:text-emerald-300">
-                    {formatRupiah(stats?.totalModalInvestasi || 0)}
-                  </span>
-                </div>
-              </div>
-            ) : (
-              <div className="flex-1 min-h-0 max-h-[65vh] lg:max-h-none overflow-y-auto overflow-x-auto relative mt-2 rounded-lg border border-[#c3c6d7]/30 dark:border-slate-800">
-                <table className="w-full text-xs text-left">
-                  <thead className="sticky top-0 z-10 bg-[#f2f3ff]/95 dark:bg-slate-800/95 backdrop-blur-xs text-[#434655] dark:text-slate-300 border-b border-[#c3c6d7]/40 dark:border-slate-700">
-                    <tr className="text-[11px] uppercase tracking-wider">
-                      <th className="px-4 py-2.5 font-bold">Kategori</th>
-                      <th className="px-4 py-2.5 font-bold text-right">Jumlah SKU</th>
-                      <th className="px-4 py-2.5 font-bold text-right">Total Stok Fisik</th>
-                      <th className="px-4 py-2.5 font-bold text-right">Total Modal Diinvestasikan</th>
-                      <th className="px-4 py-2.5 font-bold text-right">% Dari Total Modal</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[#eaedff] dark:divide-slate-800 font-mono">
-                    {stats?.categorySummary.map((cat) => {
-                      const pct = stats.totalModalInvestasi > 0
-                        ? ((cat.totalModal / stats.totalModalInvestasi) * 100).toFixed(1)
-                        : '0';
-                      return (
-                        <tr
-                          key={cat.kategori}
-                          onClick={() => {
-                            setSelectedCategory(cat.kategori);
-                            handleSelectViewTab('opname');
-                          }}
-                          className="hover:bg-[#f2f3ff]/80 dark:hover:bg-slate-800/60 cursor-pointer transition-colors"
-                          title={`Klik untuk tampilkan barang kategori ${cat.kategori}`}
-                        >
-                          <td className="px-4 py-2.5 font-sans font-semibold text-[#131b2e] dark:text-white">{cat.kategori}</td>
-                          <td className="px-4 py-2.5 text-right text-[#434655] dark:text-slate-300">{cat.itemCount} item</td>
-                          <td className="px-4 py-2.5 text-right text-[#131b2e] dark:text-white font-bold">{cat.totalQty} pcs</td>
-                          <td className="px-4 py-2.5 text-right font-bold text-[#006243] dark:text-emerald-400">
-                            {formatRupiah(cat.totalModal)}
-                          </td>
-                          <td className="px-4 py-2.5 text-right text-[#434655] dark:text-slate-400">{pct}%</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                  <tfoot className="sticky bottom-0 z-10 bg-[#f2f3ff]/95 dark:bg-slate-800/95 backdrop-blur-xs font-mono font-bold text-[#131b2e] dark:text-white border-t border-[#c3c6d7]/50 dark:border-slate-700">
-                    <tr>
-                      <td className="px-4 py-2.5 font-sans">TOTAL SEMUA</td>
-                      <td className="px-4 py-2.5 text-right">{stats?.totalItems || 0} item</td>
-                      <td className="px-4 py-2.5 text-right">{stats?.totalPhysicalQty || 0} pcs</td>
-                      <td className="px-4 py-2.5 text-right text-[#006243] dark:text-emerald-300">
-                        {formatRupiah(stats?.totalModalInvestasi || 0)}
-                      </td>
-                      <td className="px-4 py-2.5 text-right">100%</td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            )}
-          </div>
-        ) : activeViewTab === 'laporan' ? (
-          /* TAB LAPORAN: TABEL SELISIH AUDIT & HASIL OPNAME RESMI */
-          (() => {
-            const qLaporan = deferredSearchQuery.trim().toLowerCase();
-            const laporanDiscrepancyItems = items
-              .filter((item) => {
-                const diff = (item.quantity || 0) - (item.quantitySystem || 0);
-                if (diff === 0) return false;
-                if (discrepancyFilter === 'MINUS' && diff >= 0) return false;
-                if (discrepancyFilter === 'PLUS' && diff <= 0) return false;
-                if (selectedCategory !== 'ALL' && (item.kategori || '').trim() !== selectedCategory) return false;
-                if (qLaporan) {
-                  const matchSku = (item.sku || '').toLowerCase().includes(qLaporan);
-                  const matchName = (item.namaBarang || '').toLowerCase().includes(qLaporan);
-                  const matchBarcode = (item.barcode || '').toLowerCase().includes(qLaporan);
-                  if (!matchSku && !matchName && !matchBarcode) return false;
-                }
-                return true;
-              })
-              .sort((a, b) => {
-                const lossA = Math.abs(((a.quantity || 0) - (a.quantitySystem || 0)) * (a.hargaModal || 0));
-                const lossB = Math.abs(((b.quantity || 0) - (b.quantitySystem || 0)) * (b.hargaModal || 0));
-                return lossB - lossA;
-              });
-
-            const activeLaporanMode: 'ALL' | 'MINUS' | 'PLUS' =
-              discrepancyFilter === 'MINUS' ? 'MINUS' : discrepancyFilter === 'PLUS' ? 'PLUS' : 'ALL';
-
-            return (
-              <div className="bg-white dark:bg-slate-900 rounded-xl border border-[#c3c6d7]/40 dark:border-slate-800 p-3 sm:p-4 shadow-xs flex-1 min-h-0 flex flex-col lg:overflow-hidden transition-colors">
-                <div className="shrink-0 flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#eaedff] dark:border-slate-800">
-                  <div>
-                    <h2 className="text-sm sm:text-base font-bold text-[#131b2e] dark:text-white">
-                      Laporan Selisih Stok &amp; Audit Modal
-                    </h2>
-                    <p className="text-xs text-[#434655] dark:text-slate-400">
-                      Daftar barang dengan selisih stok fisik vs sistem · Klik barang untuk audit ulang di Station
+          <main className="flex-1 min-h-0 max-w-7xl w-full mx-auto px-2.5 pt-2 pb-28 flex flex-col">
+            {activeViewTab !== 'opname' && (
+              <div className="shrink-0 bg-white dark:bg-slate-900 rounded-xl border border-[#c3c6d7]/40 dark:border-slate-800 p-3 shadow-2xs mb-2.5 transition-colors">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <h1 className="text-base font-bold tracking-tight text-[#131b2e] dark:text-white leading-tight">
+                      Dashboard Stok Opname
+                    </h1>
+                    <p className="text-[11px] text-[#434655] dark:text-slate-400 mt-0.5 truncate">
+                      Semua perubahan fisik tersimpan otomatis di Cloud
                     </p>
                   </div>
-                  <div className="flex flex-wrap items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingItem(null);
+                      setPrefilledBarcode('');
+                      setIsItemFormOpen(true);
+                    }}
+                    className="shrink-0 py-2 px-3 text-xs font-bold text-white bg-[#004ac6] hover:bg-[#003ea8] active:scale-95 rounded-lg flex items-center gap-1 shadow-xs transition-transform"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Tambah</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {activeViewTab === 'kategori' ? (
+              <div className="bg-white dark:bg-slate-900 rounded-xl border border-[#c3c6d7]/40 dark:border-slate-800 p-3 shadow-2xs flex-1 flex flex-col transition-colors">
+                <div className="pb-3 border-b border-[#eaedff] dark:border-slate-800">
+                  <h2 className="text-sm font-bold text-[#131b2e] dark:text-white">Rekapitulasi Modal per Kategori</h2>
+                  <p className="text-xs text-[#434655] dark:text-slate-400">
+                    Distribusi total nilai modal barang yang diinvestasikan pada tiap kategori
+                  </p>
+                </div>
+
+                <div className="space-y-2.5 pt-3">
+                  {stats?.categorySummary.map((cat) => {
+                    const pct =
+                      stats.totalModalInvestasi > 0
+                        ? ((cat.totalModal / stats.totalModalInvestasi) * 100).toFixed(1)
+                        : '0';
+                    return (
+                      <div
+                        key={cat.kategori}
+                        className="p-3 bg-[#f2f3ff] dark:bg-slate-800/60 rounded-xl border border-[#c3c6d7]/40 dark:border-slate-700/80 space-y-1.5"
+                      >
+                        <div className="flex items-center justify-between">
+                          <h4 className="font-bold text-xs text-[#131b2e] dark:text-white">{cat.kategori}</h4>
+                          <span className="text-xs font-mono font-bold text-[#006243] dark:text-emerald-400">
+                            {formatRupiah(cat.totalModal)}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between text-[11px] text-[#434655] dark:text-slate-400 pt-1 border-t border-[#c3c6d7]/30 dark:border-slate-700/60">
+                          <span>{cat.itemCount} SKU • {cat.totalQty} unit</span>
+                          <span className="font-semibold text-[#131b2e] dark:text-slate-300">{pct}% dari modal</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <div className="p-3 bg-[#eaedff] dark:bg-slate-800 rounded-xl border border-[#c3c6d7]/60 dark:border-slate-700 flex items-center justify-between font-bold text-xs">
+                    <span>TOTAL SEMUA</span>
+                    <span className="font-mono text-[#006243] dark:text-emerald-300">
+                      {formatRupiah(stats?.totalModalInvestasi || 0)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ) : activeViewTab === 'laporan' ? (
+              <div className="bg-white dark:bg-slate-900 rounded-xl border border-[#c3c6d7]/40 dark:border-slate-800 p-3 shadow-2xs flex-1 flex flex-col transition-colors">
+                <div className="flex flex-col gap-2.5 pb-3 border-b border-[#eaedff] dark:border-slate-800">
+                  <div>
+                    <h2 className="text-sm font-bold text-[#131b2e] dark:text-white">Laporan Selisih Stok &amp; Audit Modal</h2>
+                    <p className="text-xs text-[#434655] dark:text-slate-400">
+                      Daftar barang dengan perbedaan antara stok fisik hasil opname vs stok sistem mart
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
                     <button
                       type="button"
                       onClick={() => setIsLaporanHasilOpnameOpen(true)}
-                      className="px-3 py-1.5 text-xs font-semibold text-white bg-purple-600 hover:bg-purple-700 rounded-lg flex items-center gap-1.5 shadow-2xs transition-colors"
-                      title="Buka Berita Acara & Laporan Hasil Opname Lengkap"
+                      className="px-3.5 py-1.5 text-xs font-semibold text-white bg-purple-600 hover:bg-purple-700 rounded-lg flex items-center gap-1.5 shadow-2xs transition-colors"
                     >
                       <FileText className="w-3.5 h-3.5" />
                       <span>Laporan Hasil Opname Resmi</span>
@@ -2248,61 +1734,44 @@ export default function App() {
 
                     <button
                       type="button"
-                      onClick={() => setDiscrepancyFilter('ALL')}
+                      onClick={() => setDiscrepancyFilter((prev) => (prev === 'MINUS' ? 'ALL' : 'MINUS'))}
                       className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
-                        activeLaporanMode === 'ALL'
-                          ? 'bg-[#004ac6] text-white'
-                          : 'bg-[#f2f3ff] dark:bg-slate-800 text-[#434655] dark:text-slate-300 hover:bg-[#eaedff] dark:hover:bg-slate-700'
+                        discrepancyFilter === 'MINUS'
+                          ? 'bg-red-600 text-white'
+                          : 'bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300'
                       }`}
                     >
-                      Semua Selisih ({totalSelisihCount})
+                      Selisih Minus
                     </button>
                     <button
                       type="button"
-                      onClick={() => setDiscrepancyFilter('MINUS')}
+                      onClick={() => setDiscrepancyFilter((prev) => (prev === 'PLUS' ? 'ALL' : 'PLUS'))}
                       className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
-                        activeLaporanMode === 'MINUS'
-                          ? 'bg-[#ba1a1a] text-white'
-                          : 'bg-[#ffdad6]/60 dark:bg-red-950/40 text-[#ba1a1a] dark:text-red-300 hover:bg-[#ffdad6] dark:hover:bg-red-900/60'
+                        discrepancyFilter === 'PLUS'
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300'
                       }`}
                     >
-                      Minus ({stats?.minusCount || 0})
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setDiscrepancyFilter('PLUS')}
-                      className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
-                        activeLaporanMode === 'PLUS'
-                          ? 'bg-[#006398] text-white'
-                          : 'bg-[#cce5ff]/60 dark:bg-blue-950/40 text-[#004b73] dark:text-blue-300 hover:bg-[#cce5ff] dark:hover:bg-blue-900/60'
-                      }`}
-                    >
-                      Lebih ({stats?.plusCount || 0})
+                      Selisih Lebih
                     </button>
                   </div>
                 </div>
 
-                {!isDesktopViewport ? (
-                  <div className="space-y-2.5 pt-3">
-                    {laporanDiscrepancyItems.length === 0 ? (
-                      <div className="py-8 text-center text-xs text-[#434655] dark:text-slate-400 bg-[#f2f3ff] dark:bg-slate-800/40 rounded-xl">
-                        {activeLaporanMode === 'ALL'
-                          ? 'Semua stok fisik dan stok sistem cocok sempurna (100% seimbang).'
-                          : 'Tidak ada barang dengan kriteria selisih ini.'}
-                      </div>
-                    ) : (
-                      laporanDiscrepancyItems.map((item) => {
+                <div className="space-y-2.5 pt-3">
+                  {filteredItems.filter((item) => item.quantity - item.quantitySystem !== 0).length === 0 ? (
+                    <div className="py-8 text-center text-xs text-[#434655] dark:text-slate-400 bg-[#f2f3ff] dark:bg-slate-800/40 rounded-xl">
+                      Semua stok fisik dan stok sistem cocok sempurna (100% seimbang).
+                    </div>
+                  ) : (
+                    filteredItems
+                      .filter((item) => item.quantity - item.quantitySystem !== 0)
+                      .map((item) => {
                         const diff = item.quantity - item.quantitySystem;
                         const diffModal = diff * item.hargaModal;
                         return (
-                          <button
-                            type="button"
+                          <div
                             key={item.id}
-                            onClick={() => {
-                              setActiveCountingItemId(item.id);
-                              handleSelectViewTab('opname');
-                            }}
-                            className="w-full text-left p-3 bg-[#f2f3ff] dark:bg-slate-800/60 rounded-xl border border-[#c3c6d7]/40 dark:border-slate-700/80 space-y-2 active:scale-[0.99] transition-transform"
+                            className="p-3 bg-[#f2f3ff] dark:bg-slate-800/60 rounded-xl border border-[#c3c6d7]/40 dark:border-slate-700/80 space-y-2"
                           >
                             <div className="flex items-start justify-between gap-2">
                               <div className="min-w-0 flex-1">
@@ -2343,195 +1812,66 @@ export default function App() {
                                     diffModal < 0 ? 'text-[#ba1a1a] dark:text-red-400' : 'text-[#004ac6] dark:text-blue-400'
                                   }`}
                                 >
-                                  {diffModal > 0 ? `+` : ''}{formatRupiah(diffModal)}
+                                  {diffModal > 0 ? '+' : ''}
+                                  {formatRupiah(diffModal)}
                                 </span>
                               </div>
                             </div>
-                          </button>
+                          </div>
                         );
                       })
-                    )}
-                  </div>
-                ) : (
-                  <div className="flex-1 min-h-0 max-h-[65vh] lg:max-h-none overflow-y-auto overflow-x-auto relative mt-2 rounded-lg border border-[#c3c6d7]/30 dark:border-slate-800">
-                    {laporanDiscrepancyItems.length === 0 ? (
-                      <div className="py-14 text-center text-xs text-[#434655] dark:text-slate-400 bg-[#f2f3ff]/60 dark:bg-slate-800/40">
-                        {activeLaporanMode === 'ALL'
-                          ? 'Semua stok fisik dan stok sistem cocok sempurna (100% seimbang).'
-                          : 'Tidak ada barang dengan kriteria selisih ini.'}
-                      </div>
-                    ) : (
-                      <table className="w-full text-xs text-left">
-                        <thead className="sticky top-0 z-10 bg-[#f2f3ff]/95 dark:bg-slate-800/95 backdrop-blur-xs text-[#434655] dark:text-slate-200 border-b border-[#c3c6d7]/40 dark:border-slate-700">
-                          <tr className="text-[11px] uppercase tracking-wider">
-                            <th className="px-4 py-2.5 font-bold">SKU / Nama Barang</th>
-                            <th className="px-4 py-2.5 font-bold">Kategori</th>
-                            <th className="px-4 py-2.5 font-bold text-right">Fisik</th>
-                            <th className="px-4 py-2.5 font-bold text-right">Sistem</th>
-                            <th className="px-4 py-2.5 font-bold text-right">Selisih Fisik</th>
-                            <th className="px-4 py-2.5 font-bold text-right">Harga Modal</th>
-                            <th className="px-4 py-2.5 font-bold text-right">Selisih Modal (Rp)</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-[#eaedff] dark:divide-slate-800 font-mono">
-                          {laporanDiscrepancyItems.map((item) => {
-                            const diff = item.quantity - item.quantitySystem;
-                            const diffModal = diff * item.hargaModal;
-                            return (
-                              <tr
-                                key={item.id}
-                                onClick={() => {
-                                  setActiveCountingItemId(item.id);
-                                  handleSelectViewTab('opname');
-                                }}
-                                className="hover:bg-[#f2f3ff]/80 dark:hover:bg-slate-800/60 cursor-pointer transition-colors"
-                                title="Klik untuk fokus dan hitung ulang di Tablet Station"
-                              >
-                                <td className="px-4 py-2.5">
-                                  <span className="font-bold text-[#004ac6] dark:text-blue-400">{item.sku}</span>
-                                  <p className="font-sans text-[#131b2e] dark:text-slate-200 font-semibold">{item.namaBarang}</p>
-                                </td>
-                                <td className="px-4 py-2.5 font-sans text-[#434655] dark:text-slate-400">{item.kategori}</td>
-                                <td className="px-4 py-2.5 text-right font-bold text-[#131b2e] dark:text-white">
-                                  {item.quantity} {item.satuan || 'pcs'}
-                                </td>
-                                <td className="px-4 py-2.5 text-right text-[#434655] dark:text-slate-400">
-                                  {item.quantitySystem} {item.satuan || 'pcs'}
-                                </td>
-                                <td
-                                  className={`px-4 py-2.5 text-right font-bold ${
-                                    diff < 0 ? 'text-[#ba1a1a] dark:text-red-400' : 'text-[#004ac6] dark:text-blue-400'
-                                  }`}
-                                >
-                                  {diff > 0 ? `+${diff}` : diff} {item.satuan || 'pcs'}
-                                </td>
-                                <td className="px-4 py-2.5 text-right text-[#434655] dark:text-slate-300">
-                                  {formatRupiah(item.hargaModal)}
-                                </td>
-                                <td
-                                  className={`px-4 py-2.5 text-right font-bold ${
-                                    diffModal < 0 ? 'text-[#ba1a1a] dark:text-red-400' : 'text-[#004ac6] dark:text-blue-400'
-                                  }`}
-                                >
-                                  {diffModal > 0 ? `+` : ''}
-                                  {formatRupiah(diffModal)}
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    )}
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
-            );
-          })()
-        ) : !isDesktopViewport ? (
-          /* MOBILE WORKSPACE (<768px): Material-3 Compact KPI + Universal Scan/Search + Kalkulator Box & Eceran + Triage + Katalog */
-          <MobileOpnameWorkspace
-            items={items}
-            filteredItems={filteredItems}
-            visibleItems={visibleItems}
-            hasMoreVisibleItems={hasMoreVisibleItems}
-            onLoadMore={() => setVisibleLimit((prev) => prev + 120)}
-            onShowAll={() => setVisibleLimit(filteredItems.length)}
-            stats={stats}
-            isLoading={isLoading}
-            activeUser={activeUser}
-            searchQuery={searchQuery}
-            onSearchQueryChange={setSearchQuery}
-            onBarcodeSearchSubmit={handleBarcodeSearchSubmit}
-            selectedCategory={selectedCategory}
-            onSelectCategory={setSelectedCategory}
-            availableCategories={availableCategories}
-            categoryCounts={categoryCounts}
-            discrepancyFilter={discrepancyFilter}
-            onChangeDiscrepancyFilter={setDiscrepancyFilter}
-            sortBy={sortBy}
-            sortOrder={sortOrder}
-            onChangeSort={(field, order) => {
-              setSortBy(field);
-              setSortOrder(order);
-            }}
-            duplicateAnalysis={duplicateAnalysis}
-            onOpenScanner={() => setIsScannerOpen(true)}
-            onOpenAddItem={() => {
-              setEditingItem(null);
-              setPrefilledBarcode('');
-              setIsItemFormOpen(true);
-            }}
-            onOpenImportExport={() => handleOpenImportExport('import')}
-            onOpenDuplicateModal={() => setIsDuplicateModalOpen(true)}
-            onSelectTab={handleSelectViewTab}
-            onSaveCountingAdjust={handleSaveQuickAdjust}
-            onQuickDelta={handleQuickDelta}
-            onQuickAdjust={handleRowQuickAdjust}
-            onOpenCalc={handleRowOpenCalc}
-            onEditItem={handleRowEdit}
-            onDeleteItem={handleRowDelete}
-            activeCountingItemId={activeCountingItemId}
-            onSelectCountingItem={setActiveCountingItemId}
-          />
-        ) : (
-          /* DESKTOP & TABLET (>=768px): DUAL-COLUMN LANDSCAPE WORKSTATION */
-          <DesktopOpnameWorkspace
-            items={items}
-            filteredItems={filteredItems}
-            visibleItems={visibleItems}
-            hasMoreVisibleItems={hasMoreVisibleItems}
-            onLoadMore={() => setVisibleLimit((prev) => prev + 120)}
-            onShowAll={() => setVisibleLimit(filteredItems.length)}
-            loadMoreSentinelRef={loadMoreSentinelRef}
-            filteredTotalModal={filteredTotalModal}
-            stats={stats}
-            isLoading={isLoading}
-            activeUser={activeUser}
-            searchQuery={searchQuery}
-            searchInputRef={searchInputRef}
-            onSearchQueryChange={setSearchQuery}
-            onBarcodeSearchSubmit={handleBarcodeSearchSubmit}
-            selectedCategory={selectedCategory}
-            onSelectCategory={setSelectedCategory}
-            availableCategories={availableCategories}
-            categoryCounts={categoryCounts}
-            discrepancyFilter={discrepancyFilter}
-            onChangeDiscrepancyFilter={setDiscrepancyFilter}
-            sortBy={sortBy}
-            sortOrder={sortOrder}
-            onChangeSort={(field, order) => {
-              setSortBy(field);
-              setSortOrder(order);
-            }}
-            duplicateAnalysis={duplicateAnalysis}
-            onOpenScanner={() => setIsScannerOpen(true)}
-            onOpenImportExport={() => handleOpenImportExport('import')}
-            onOpenDuplicateModal={() => setIsDuplicateModalOpen(true)}
-            onSaveCountingAdjust={handleSaveQuickAdjust}
-            onQuickDelta={handleQuickDelta}
-            onQuickAdjust={handleRowQuickAdjust}
-            onOpenCalc={handleRowOpenCalc}
-            onEditItem={handleRowEdit}
-            onDeleteItem={handleRowDelete}
-            activeCountingItemId={activeCountingItemId}
-            onSelectCountingItem={setActiveCountingItemId}
-          />
-        )}
-      </main>
-
-      {/* FOOTER (Compact & hidden on mobile/tablet so workspace fills viewport) */}
-      <footer className="shrink-0 hidden lg:block bg-white/95 dark:bg-slate-900 border-t border-[#c3c6d7]/30 dark:border-slate-800 py-1.5">
-        <div className="max-w-[1536px] mx-auto px-4 lg:px-6 flex flex-row items-center justify-between text-xs text-[#434655] dark:text-slate-400 gap-2">
-          <p>© 2026 DR MART. Sistem Audit Stok & Modal Toko Mart Multi-User.</p>
-          <div className="flex items-center gap-4">
-            <span className="font-mono">
-              Hardware Scanner: <strong className="text-emerald-700 dark:text-emerald-400">Aktif (Auto-Detect USB/BT)</strong>
-            </span>
-            <span>·</span>
-            <span>Kamera Barcode: Siap</span>
-          </div>
-        </div>
-      </footer>
+            ) : (
+              <MobileOpnameWorkspace
+                items={items}
+                filteredItems={filteredItems}
+                visibleItems={visibleItems}
+                hasMoreVisibleItems={hasMoreVisibleItems}
+                onLoadMore={() => setVisibleLimit((prev) => prev + 120)}
+                onShowAll={() => setVisibleLimit(filteredItems.length)}
+                stats={stats}
+                isLoading={isLoading}
+                activeUser={activeUser}
+                searchQuery={searchQuery}
+                onSearchQueryChange={setSearchQuery}
+                onBarcodeSearchSubmit={handleBarcodeSearchSubmit}
+                selectedCategory={selectedCategory}
+                onSelectCategory={setSelectedCategory}
+                availableCategories={availableCategories}
+                categoryCounts={categoryCounts}
+                discrepancyFilter={discrepancyFilter}
+                onChangeDiscrepancyFilter={setDiscrepancyFilter}
+                sortBy={sortBy}
+                sortOrder={sortOrder}
+                onChangeSort={(field, order) => {
+                  setSortBy(field);
+                  setSortOrder(order);
+                }}
+                duplicateAnalysis={duplicateAnalysis}
+                onOpenScanner={() => setIsScannerOpen(true)}
+                onOpenAddItem={() => {
+                  setEditingItem(null);
+                  setPrefilledBarcode('');
+                  setIsItemFormOpen(true);
+                }}
+                onOpenImportExport={() => handleOpenImportExport('import')}
+                onOpenDuplicateModal={() => setIsDuplicateModalOpen(true)}
+                onSelectTab={handleSelectViewTab}
+                onSaveCountingAdjust={handleSaveQuickAdjust}
+                onQuickDelta={handleQuickDelta}
+                onQuickAdjust={handleRowQuickAdjust}
+                onOpenCalc={handleRowOpenCalc}
+                onEditItem={handleRowEdit}
+                onDeleteItem={handleRowDelete}
+                activeCountingItemId={activeCountingItemId}
+                onSelectCountingItem={setActiveCountingItemId}
+              />
+            )}
+          </main>
+        </>
+      )}
 
       {/* MODALS */}
       {/* 1. Barcode Camera Scanner with Quantity Calculator */}
@@ -2798,48 +2138,157 @@ export default function App() {
         activeUser={activeUser}
       />
 
+      {/* 12.1 Display Options & Settings Modal (Works on Mobile, Tablet & PC) */}
+      {isDisplayMenuOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150"
+          onClick={() => setIsDisplayMenuOpen(false)}
+        >
+          <div
+            className="relative w-full max-w-sm bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-5 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 rounded-lg">
+                  <SlidersHorizontal className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white leading-tight">
+                    Pengaturan &amp; Opsi Tampilan
+                  </h3>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Kelola periode opname &amp; opsi tampilan layar
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsDisplayMenuOpen(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-lg"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Options List */}
+            <div className="space-y-2.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsDisplayMenuOpen(false);
+                  setIsOpnameDateModalOpen(true);
+                }}
+                className="w-full p-3 rounded-xl border border-blue-200 dark:border-blue-900/60 bg-blue-50/70 dark:bg-blue-950/30 hover:bg-blue-100/70 dark:hover:bg-blue-950/50 flex items-center justify-between gap-3 text-left transition-colors"
+              >
+                <div className="flex items-center gap-2.5">
+                  <Calendar className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+                  <div>
+                    <span className="text-xs font-semibold text-slate-900 dark:text-white block">
+                      Tanggal &amp; Periode Opname
+                    </span>
+                    <span className="text-[11px] font-mono text-blue-700 dark:text-blue-300">
+                      Sesi aktif: {session.opnameDate}
+                    </span>
+                  </div>
+                </div>
+                <span className="text-[11px] font-bold text-blue-700 dark:text-blue-400">Ubah</span>
+              </button>
+
+              <label className="flex items-start gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer transition-colors select-none">
+                <input
+                  type="checkbox"
+                  checked={showResetButton}
+                  onChange={toggleResetButton}
+                  className="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 shrink-0"
+                />
+                <div className="flex-1 text-xs">
+                  <span className="font-semibold text-slate-900 dark:text-white block">
+                    Tombol Reset Sesi Opname
+                  </span>
+                  <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 block">
+                    Tampilkan tombol merah untuk mereset seluruh hitungan fisik ke 0 saat sesi audit baru
+                  </span>
+                </div>
+              </label>
+            </div>
+
+            {/* Tombol Khusus Hapus Seluruh Data Demo */}
+            <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsDisplayMenuOpen(false);
+                  setIsClearDemoModalOpen(true);
+                }}
+                className="w-full py-2 px-3 text-xs font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-xl border border-red-200 dark:border-red-900/60 flex items-center justify-center gap-2 transition-colors"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Hapus Semua Data Demo (0 Barang)</span>
+              </button>
+            </div>
+
+            {/* Footer Button */}
+            <div className="pt-1">
+              <button
+                type="button"
+                onClick={() => setIsDisplayMenuOpen(false)}
+                className="w-full py-2.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-colors shadow-xs"
+              >
+                Selesai &amp; Simpan Pilihan
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 13. Mobile Bottom Dock Navigation (Thumb-friendly Bar at bottom of screen) */}
-      <MobileBottomDock
-        activeTab={activeViewTab}
-        onSelectTab={handleSelectViewTab}
-        onOpenScanner={() => setIsScannerOpen(true)}
-        onOpenCalculator={() => {
-          setCalcTargetItem(null);
-          setIsGlobalCalcOpen(true);
-        }}
-        onOpenMenu={() => setIsMobileMenuOpen(true)}
-        activeUser={activeUser}
-      />
+      {!isDesktopViewport && (
+        <MobileBottomDock
+          activeTab={activeViewTab}
+          onSelectTab={handleSelectViewTab}
+          onOpenScanner={() => setIsScannerOpen(true)}
+          onOpenCalculator={() => {
+            setCalcTargetItem(null);
+            setIsGlobalCalcOpen(true);
+          }}
+          onOpenMenu={() => setIsMobileMenuOpen(true)}
+          activeUser={activeUser}
+        />
+      )}
 
       {/* 14. Mobile Full Actions Menu Bottom Sheet */}
-      <MobileMenuSheet
-        isOpen={isMobileMenuOpen}
-        onClose={() => setIsMobileMenuOpen(false)}
-        activeUser={activeUser}
-        session={session}
-        onOpenFinance={() => setIsFinanceModalOpen(true)}
-        onOpenImportExport={() => handleOpenImportExport('import')}
-        onOpenLaporanHasil={() => setIsLaporanHasilOpnameOpen(true)}
-        onOpenOpnameDate={() => setIsOpnameDateModalOpen(true)}
-        onOpenAddItem={() => {
-          setEditingItem(null);
-          setPrefilledBarcode('');
-          setIsItemFormOpen(true);
-        }}
-        onOpenCalculator={() => {
-          setCalcTargetItem(null);
-          setIsGlobalCalcOpen(true);
-        }}
-        onOpenAuditLogs={() => setIsAuditDrawerOpen(true)}
-        onOpenUserModal={() => setIsUserModalOpen(true)}
-        onOpenDisplayOptions={() => setIsDisplayMenuOpen(true)}
-        onResetSession={handleResetSession}
-        onClearDemoData={() => setIsClearDemoModalOpen(true)}
-        onSelectTab={handleSelectViewTab}
-        showResetButton={showResetButton}
-        onOpenDuplicateModal={() => setIsDuplicateModalOpen(true)}
-        duplicateCount={duplicateAnalysis.totalAffectedItems}
-      />
+      {!isDesktopViewport && (
+        <MobileMenuSheet
+          isOpen={isMobileMenuOpen}
+          onClose={() => setIsMobileMenuOpen(false)}
+          activeUser={activeUser}
+          session={session}
+          onOpenFinance={() => setIsFinanceModalOpen(true)}
+          onOpenImportExport={() => handleOpenImportExport('import')}
+          onOpenLaporanHasil={() => setIsLaporanHasilOpnameOpen(true)}
+          onOpenOpnameDate={() => setIsOpnameDateModalOpen(true)}
+          onOpenAddItem={() => {
+            setEditingItem(null);
+            setPrefilledBarcode('');
+            setIsItemFormOpen(true);
+          }}
+          onOpenCalculator={() => {
+            setCalcTargetItem(null);
+            setIsGlobalCalcOpen(true);
+          }}
+          onOpenAuditLogs={() => setIsAuditDrawerOpen(true)}
+          onOpenUserModal={() => setIsUserModalOpen(true)}
+          onOpenDisplayOptions={() => setIsDisplayMenuOpen(true)}
+          onResetSession={handleResetSession}
+          onClearDemoData={() => setIsClearDemoModalOpen(true)}
+          onSelectTab={handleSelectViewTab}
+          showResetButton={showResetButton}
+          onOpenDuplicateModal={() => setIsDuplicateModalOpen(true)}
+          duplicateCount={duplicateAnalysis.totalAffectedItems}
+        />
+      )}
     </div>
   );
 }
