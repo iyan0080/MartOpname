@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback, useDeferredValue } from 'react';
 import {
   Barcode,
   Search,
@@ -79,6 +79,7 @@ import { LaporanHasilOpnameModal } from './components/LaporanHasilOpnameModal.ts
 import { DuplicateItemsModal } from './components/DuplicateItemsModal.tsx';
 import { MobileBottomDock } from './components/MobileBottomDock.tsx';
 import { MobileMenuSheet } from './components/MobileMenuSheet.tsx';
+import { DesktopInventoryRow, MobileInventoryCard } from './components/InventoryRows.tsx';
 import { useTheme } from './utils/useTheme.ts';
 import { ThemeToggle } from './components/ThemeToggle.tsx';
 
@@ -87,7 +88,6 @@ export default function App() {
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [users, setUsers] = useState<MartUser[]>(INITIAL_USERS);
   const [logs, setLogs] = useState<ScanAuditLog[]>([]);
-  const [stats, setStats] = useState<InventoryStats | null>(null);
   const [activeUsersCount, setActiveUsersCount] = useState<number>(1);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isCloudConnected, setIsCloudConnected] = useState<boolean>(true);
@@ -95,17 +95,35 @@ export default function App() {
   const [cloudSyncStatus, setCloudSyncStatus] = useState<'synced' | 'saving' | 'error'>('synced');
   const syncTimeoutRef = useRef<any>(null);
 
-  const markCloudSaving = () => {
+  // Derived inventory statistics (eliminates nested setStats calls inside setItems updaters)
+  const stats = useMemo<InventoryStats | null>(() => {
+    if (isLoading && items.length === 0) return null;
+    return calculateInventoryStats(items);
+  }, [items, isLoading]);
+
+  // Responsive viewport matcher so only active Mobile Cards OR Desktop Table mounts in DOM
+  const [isDesktopViewport, setIsDesktopViewport] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? window.matchMedia('(min-width: 768px)').matches : true
+  );
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mq = window.matchMedia('(min-width: 768px)');
+    const onChange = (e: MediaQueryListEvent) => setIsDesktopViewport(e.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+
+  const markCloudSaving = useCallback(() => {
     if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
     setCloudSyncStatus('saving');
-  };
+  }, []);
 
-  const markCloudSynced = () => {
+  const markCloudSynced = useCallback(() => {
     if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
     syncTimeoutRef.current = setTimeout(() => {
       setCloudSyncStatus('synced');
-    }, 400);
-  };
+    }, 350);
+  }, []);
 
   // Theme mode: system (default, follows device settings), light, or dark (can be changed manually)
   const { themeMode, isDark, setThemeMode } = useTheme();
@@ -175,7 +193,6 @@ export default function App() {
   });
 
   const [isDisplayMenuOpen, setIsDisplayMenuOpen] = useState(false);
-  const displayMenuRef = useRef<HTMLDivElement>(null);
 
   const toggleResetButton = () => {
     setShowResetButton((prev) => {
@@ -185,39 +202,22 @@ export default function App() {
     });
   };
 
-  // Close display menu on click outside
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (displayMenuRef.current && !displayMenuRef.current.contains(e.target as Node)) {
-        setIsDisplayMenuOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
   // Toast notification for real-time alerts
   const [liveToast, setLiveToast] = useState<{ message: string; type: 'info' | 'success' | 'alert' } | null>(null);
   const toastTimeoutRef = useRef<any>(null);
 
-  const showToast = (message: string, type: 'info' | 'success' | 'alert' = 'info') => {
+  const showToast = useCallback((message: string, type: 'info' | 'success' | 'alert' = 'info') => {
     if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
     setLiveToast({ message, type });
     toastTimeoutRef.current = setTimeout(() => {
       setLiveToast(null);
-    }, 4500);
-  };
+    }, 3500);
+  }, []);
 
   // Internal navigation stack to guarantee phone back button always steps back through previously opened tabs
   const visitedTabsStackRef = useRef<Array<'opname' | 'laporan' | 'kategori'>>(['opname']);
-
-  // Handle tab switching with browser history push so hardware/browser back button returns to previous tab
-  const handleSelectViewTab = (tab: 'opname' | 'laporan' | 'kategori') => {
-    if (tab === activeViewTab) return;
-    visitedTabsStackRef.current.push(tab);
-    window.history.pushState({ type: 'tab', tab }, '');
-    setActiveViewTab(tab);
-  };
+  const activeViewTabRef = useRef(activeViewTab);
+  activeViewTabRef.current = activeViewTab;
 
   // Track if any modal, sheet, dialog, or drawer is currently open
   const isAnyModalActive = Boolean(
@@ -245,8 +245,24 @@ export default function App() {
 
   const isPoppingStateRef = useRef(false);
   const prevModalStateRef = useRef(false);
+  const pendingHistoryBackRef = useRef(0);
+  const modalHistoryPushedRef = useRef(false);
 
-  const closeAllActiveModals = () => {
+  // Handle tab switching with browser history push so hardware/browser back button returns to previous tab
+  const handleSelectViewTab = useCallback((tab: 'opname' | 'laporan' | 'kategori') => {
+    if (tab === activeViewTabRef.current) return;
+    visitedTabsStackRef.current.push(tab);
+    if (modalHistoryPushedRef.current && window.history.state?.type === 'modal') {
+      // Replace transient modal entry cleanly if switching tabs directly from a modal menu
+      modalHistoryPushedRef.current = false;
+      window.history.replaceState({ type: 'tab', tab }, '');
+    } else {
+      window.history.pushState({ type: 'tab', tab }, '');
+    }
+    setActiveViewTab(tab);
+  }, []);
+
+  const closeAllActiveModals = useCallback(() => {
     setIsMobileMenuOpen(false);
     setIsScannerOpen(false);
     setIsItemFormOpen(false);
@@ -264,29 +280,41 @@ export default function App() {
     setIsClearDemoModalOpen(false);
     setDeleteConfirmItem(null);
     setIsDisplayMenuOpen(false);
-  };
+  }, []);
 
   // Sync modal open/close with browser history so back button closes modal first
   useEffect(() => {
     if (isAnyModalActive && !prevModalStateRef.current) {
-      window.history.pushState({ type: 'modal', tab: activeViewTab }, '');
+      window.history.pushState({ type: 'modal', tab: activeViewTabRef.current }, '');
+      modalHistoryPushedRef.current = true;
     } else if (!isAnyModalActive && prevModalStateRef.current) {
-      if (!isPoppingStateRef.current && window.history.state?.type === 'modal') {
+      if (!isPoppingStateRef.current && modalHistoryPushedRef.current && window.history.state?.type === 'modal') {
+        modalHistoryPushedRef.current = false;
+        pendingHistoryBackRef.current += 1;
         window.history.back();
+      } else {
+        modalHistoryPushedRef.current = false;
       }
     }
     prevModalStateRef.current = isAnyModalActive;
     isPoppingStateRef.current = false;
-  }, [isAnyModalActive, activeViewTab]);
+  }, [isAnyModalActive]);
 
   // Handle phone navigation back button (hardware back, swipe gesture, or browser back)
   useEffect(() => {
     if (!window.history.state || !window.history.state.tab) {
-      window.history.replaceState({ type: 'tab', tab: activeViewTab }, '');
+      window.history.replaceState({ type: 'tab', tab: activeViewTabRef.current }, '');
     }
 
     const handlePopState = (e: PopStateEvent) => {
+      // Ignore popstate events triggered by our own programmatic window.history.back() cleanup
+      if (pendingHistoryBackRef.current > 0) {
+        pendingHistoryBackRef.current -= 1;
+        return;
+      }
+
       isPoppingStateRef.current = true;
+      modalHistoryPushedRef.current = false;
 
       // 1. If any modal is open, phone back button closes the open modal and stays on current page
       if (isAnyModalActiveRef.current) {
@@ -304,7 +332,7 @@ export default function App() {
       } else {
         // Fallback using visited tabs stack
         if (visitedTabsStackRef.current.length > 1) {
-          visitedTabsStackRef.current.pop(); // pop current
+          visitedTabsStackRef.current.pop();
           const lastTab = visitedTabsStackRef.current[visitedTabsStackRef.current.length - 1] || 'opname';
           setActiveViewTab(lastTab);
         } else {
@@ -315,7 +343,7 @@ export default function App() {
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [activeViewTab]);
+  }, [closeAllActiveModals]);
 
   // Sync active user change to localStorage with password verification for IYAN
   const handleSelectActiveUser = (name: string) => {
@@ -383,6 +411,19 @@ export default function App() {
     }
   };
 
+  // Coalescing ref for rapid +1 / -1 clicks per item so bursts never lose increments or race with Firestore echoes
+  const pendingDeltaMapRef = useRef<
+    Map<
+      string,
+      {
+        initialQty: number;
+        latestItem: InventoryItem;
+        user: string;
+        timer: ReturnType<typeof setTimeout>;
+      }
+    >
+  >(new Map());
+
   // Initialize direct real-time Firebase Cloud Firestore connection
   // Back end: Firebase Cloud Firestore | Front end: GitHub Pages
   useEffect(() => {
@@ -393,8 +434,13 @@ export default function App() {
     // Real-time listener for Items from Firebase Cloud Firestore (Clean, zero dummy items)
     const unsubscribeItems = subscribeToFirestoreItems(
       (cloudItems) => {
-        setItems(cloudItems);
-        setStats(calculateInventoryStats(cloudItems));
+        if (pendingDeltaMapRef.current.size > 0) {
+          setItems(
+            cloudItems.map((ci) => pendingDeltaMapRef.current.get(ci.id)?.latestItem ?? ci)
+          );
+        } else {
+          setItems(cloudItems);
+        }
         setIsLoading(false);
         setIsCloudConnected(true);
       },
@@ -558,11 +604,7 @@ export default function App() {
       };
 
       // 1. Instant Optimistic UI Update (0ms response)
-      setItems((prevItems) => {
-        const next = prevItems.map((i) => (i.id === item.id ? updatedItem : i));
-        setStats(calculateInventoryStats(next));
-        return next;
-      });
+      setItems((prevItems) => prevItems.map((i) => (i.id === item.id ? updatedItem : i)));
       if (soundEnabled) playScanSuccessSound();
       if (matchingItems.length === 1) {
         showToast(`[Hardware Scanner] +1 ${item.namaBarang} (Total: ${newQty} pcs)`, 'success');
@@ -636,11 +678,7 @@ export default function App() {
       };
 
       // 1. Instant Optimistic UI Update (0ms response)
-      setItems((prevItems) => {
-        const next = prevItems.map((i) => (i.id === local.id ? updatedItem : i));
-        setStats(calculateInventoryStats(next));
-        return next;
-      });
+      setItems((prevItems) => prevItems.map((i) => (i.id === local.id ? updatedItem : i)));
       if (soundEnabled) playScanSuccessSound();
       showToast(`+1 ${local.namaBarang} (Total: ${newQty} pcs)`, 'success');
 
@@ -700,50 +738,91 @@ export default function App() {
     }
   };
 
-  // Quick adjust quantity via table buttons (+1 / -1) directly to Firebase Cloud
-  const handleQuickDelta = async (item: InventoryItem, delta: number) => {
-    const prevQty = item.quantity || 0;
-    const newQty = Math.max(0, prevQty + delta);
+  // Quick adjust quantity via table buttons (+1 / -1) with 0ms optimistic update & burst coalescing to Firebase Cloud
+  const activeUserRef = useRef(activeUser);
+  activeUserRef.current = activeUser;
+  const soundEnabledRef = useRef(soundEnabled);
+  soundEnabledRef.current = soundEnabled;
+
+  const handleQuickDelta = useCallback((itemId: string, delta: number) => {
+    const user = activeUserRef.current;
     const now = new Date().toISOString();
-    const updatedItem: InventoryItem = {
-      ...item,
-      quantity: newQty,
-      lastUpdatedBy: activeUser,
-      updatedAt: now,
-    };
 
-    // 1. INSTANT OPTIMISTIC UPDATE (0ms touch latency)
-    setItems((prevItems) => {
-      const next = prevItems.map((i) => (i.id === item.id ? updatedItem : i));
-      setStats(calculateInventoryStats(next));
-      return next;
-    });
-    if (soundEnabled) playScanSuccessSound();
-
-    const log: ScanAuditLog = {
-      id: `log-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-      itemId: item.id,
-      sku: item.sku,
-      namaBarang: item.namaBarang,
-      barcode: item.barcode,
-      user: activeUser,
-      action: delta > 0 ? 'SCAN_INCREMENT' : 'SET_QUANTITY',
-      previousQty: prevQty,
-      newQty,
-      delta: newQty - prevQty,
-      notes: item.keterangan,
-      timestamp: now,
-    };
-    try {
-      markCloudSaving();
-      await saveItemToFirestore(updatedItem);
-      await saveLogToFirestore(log);
-      markCloudSynced();
-    } catch (err) {
-      console.error('Quick delta error:', err);
-      setCloudSyncStatus('error');
+    if (soundEnabledRef.current) {
+      playScanSuccessSound();
     }
-  };
+
+    setItems((prevItems) => {
+      let updatedItem: InventoryItem | null = null;
+      let prevQty = 0;
+
+      const nextItems = prevItems.map((i) => {
+        if (i.id !== itemId) return i;
+        prevQty = i.quantity || 0;
+        const newQty = Math.max(0, prevQty + delta);
+        updatedItem = {
+          ...i,
+          quantity: newQty,
+          lastUpdatedBy: user,
+          updatedAt: now,
+        };
+        return updatedItem;
+      });
+
+      if (!updatedItem) return prevItems;
+
+      const existingPending = pendingDeltaMapRef.current.get(itemId);
+      if (existingPending) {
+        clearTimeout(existingPending.timer);
+      }
+
+      const initialQty = existingPending ? existingPending.initialQty : prevQty;
+      const finalItem = updatedItem as InventoryItem;
+
+      const timer = setTimeout(async () => {
+        const entry = pendingDeltaMapRef.current.get(itemId);
+        pendingDeltaMapRef.current.delete(itemId);
+        if (!entry) return;
+
+        const netDelta = entry.latestItem.quantity - entry.initialQty;
+        const log: ScanAuditLog = {
+          id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          itemId: entry.latestItem.id,
+          sku: entry.latestItem.sku,
+          namaBarang: entry.latestItem.namaBarang,
+          barcode: entry.latestItem.barcode,
+          user: entry.user,
+          action: netDelta > 0 ? 'SCAN_INCREMENT' : 'SET_QUANTITY',
+          previousQty: entry.initialQty,
+          newQty: entry.latestItem.quantity,
+          delta: netDelta,
+          notes: entry.latestItem.keterangan,
+          timestamp: entry.latestItem.updatedAt,
+        };
+
+        try {
+          markCloudSaving();
+          await Promise.all([
+            saveItemToFirestore(entry.latestItem),
+            saveLogToFirestore(log),
+          ]);
+          markCloudSynced();
+        } catch (err) {
+          console.error('Quick delta error:', err);
+          setCloudSyncStatus('error');
+        }
+      }, 160);
+
+      pendingDeltaMapRef.current.set(itemId, {
+        initialQty,
+        latestItem: finalItem,
+        user,
+        timer,
+      });
+
+      return nextItems;
+    });
+  }, [markCloudSaving, markCloudSynced]);
 
   // Save new or edited item directly to Firebase Cloud
   const handleSaveItem = async (itemData: Partial<InventoryItem>): Promise<boolean> => {
@@ -775,11 +854,7 @@ export default function App() {
         };
 
         // Instant Optimistic Update
-        setItems((prev) => {
-          const next = prev.map((i) => (i.id === updatedItem.id ? updatedItem : i));
-          setStats(calculateInventoryStats(next));
-          return next;
-        });
+        setItems((prev) => prev.map((i) => (i.id === updatedItem.id ? updatedItem : i)));
 
         const log: ScanAuditLog = {
           id: `log-${Date.now()}`,
@@ -824,11 +899,7 @@ export default function App() {
         };
 
         // Instant Optimistic Update
-        setItems((prev) => {
-          const next = [newItem, ...prev];
-          setStats(calculateInventoryStats(next));
-          return next;
-        });
+        setItems((prev) => [newItem, ...prev]);
 
         const log: ScanAuditLog = {
           id: `log-${Date.now()}`,
@@ -871,11 +942,7 @@ export default function App() {
     setDeleteConfirmItem(null);
 
     // Instant Optimistic Update
-    setItems((prev) => {
-      const next = prev.filter((i) => i.id !== item.id);
-      setStats(calculateInventoryStats(next));
-      return next;
-    });
+    setItems((prev) => prev.filter((i) => i.id !== item.id));
 
     try {
       markCloudSaving();
@@ -919,11 +986,7 @@ export default function App() {
       };
 
       // Instant Optimistic Update
-      setItems((prev) => {
-        const next = prev.map((i) => (i.id === itemId ? updatedItem : i));
-        setStats(calculateInventoryStats(next));
-        return next;
-      });
+      setItems((prev) => prev.map((i) => (i.id === itemId ? updatedItem : i)));
       if (soundEnabled) playScanSuccessSound();
 
       const log: ScanAuditLog = {
@@ -1160,7 +1223,6 @@ export default function App() {
       markCloudSaving();
       await clearAllItemsFromFirestore();
       setItems([]);
-      setStats(calculateInventoryStats([]));
       const log: ScanAuditLog = {
         id: `log-${Date.now()}`,
         itemId: 'all',
@@ -1237,13 +1299,16 @@ export default function App() {
     };
   }, [items]);
 
+  // Defer search query so typing and button clicks stay instant on large inventories
+  const deferredSearchQuery = useDeferredValue(searchQuery);
+
   // Filtered & Sorted items
   const filteredItems = useMemo(() => {
     return items
       .filter((item) => {
         // Search filter (Default Barcode Scanner search prioritized)
-        if (searchQuery.trim()) {
-          const q = searchQuery.toLowerCase().trim();
+        if (deferredSearchQuery.trim()) {
+          const q = deferredSearchQuery.toLowerCase().trim();
           if (searchMode === 'barcode') {
             const matchBarcode = item.barcode.toLowerCase().includes(q);
             const matchSku = item.sku.toLowerCase().includes(q);
@@ -1291,7 +1356,65 @@ export default function App() {
         }
         return sortOrder === 'desc' ? -comp : comp;
       });
-  }, [items, searchQuery, searchMode, selectedCategory, discrepancyFilter, sortBy, sortOrder, duplicateAnalysis]);
+  }, [items, deferredSearchQuery, searchMode, selectedCategory, discrepancyFilter, sortBy, sortOrder, duplicateAnalysis]);
+
+  // Progressive chunking so rendering 1,000+ rows stays <10ms on clicks, filters, and tab switches
+  const [visibleLimit, setVisibleLimit] = useState(120);
+  const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    setVisibleLimit(120);
+  }, [deferredSearchQuery, searchMode, selectedCategory, discrepancyFilter, sortBy, sortOrder]);
+
+  const visibleItems = useMemo(() => {
+    return filteredItems.slice(0, visibleLimit);
+  }, [filteredItems, visibleLimit]);
+
+  const hasMoreVisibleItems = visibleLimit < filteredItems.length;
+
+  useEffect(() => {
+    const sentinel = loadMoreSentinelRef.current;
+    if (!sentinel || !hasMoreVisibleItems) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setVisibleLimit((prev) => prev + 120);
+        }
+      },
+      { rootMargin: '250px' }
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMoreVisibleItems, isDesktopViewport, activeViewTab]);
+
+  // Memoized total modal for footer summary (avoids inline reduce on unrelated state updates)
+  const filteredTotalModal = useMemo(() => {
+    return filteredItems.reduce((acc, curr) => acc + (curr.quantity || 0) * (curr.hargaModal || 0), 0);
+  }, [filteredItems]);
+
+  // Stable row action callbacks for React.memo InventoryRows
+  const handleRowOpenCalc = useCallback((item: InventoryItem) => {
+    setCalcTargetItem(item);
+    setIsGlobalCalcOpen(true);
+  }, []);
+
+  const handleRowEdit = useCallback((item: InventoryItem) => {
+    setEditingItem(item);
+    setIsItemFormOpen(true);
+  }, []);
+
+  const handleRowQuickAdjust = useCallback((item: InventoryItem) => {
+    setQuickAdjustItem(item);
+  }, []);
+
+  const handleRowDelete = useCallback((item: InventoryItem) => {
+    setDeleteConfirmItem(item);
+  }, []);
+
+  const handleRowOpenDuplicate = useCallback(() => {
+    setIsDuplicateModalOpen(true);
+  }, []);
 
   // Unique categories list dynamically derived from imported items
   const availableCategories = useMemo(() => {
@@ -1327,39 +1450,43 @@ export default function App() {
 
   return (
     <div className="min-h-screen md:h-screen md:overflow-hidden bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors duration-150">
-      {/* Real-time floating toast */}
+      {/* Real-time floating toast (positioned above mobile bottom dock & non-blocking wrapper) */}
       {liveToast && (
-        <div
-          className={`fixed bottom-5 right-5 z-50 px-4 py-3 rounded-lg shadow-xl border text-xs font-medium flex items-center gap-2.5 transition-all max-w-sm ${
-            liveToast.type === 'success'
-              ? 'bg-emerald-900 text-white border-emerald-700'
-              : liveToast.type === 'alert'
-              ? 'bg-amber-900 text-white border-amber-700'
-              : 'bg-slate-900 text-white border-slate-700'
-          }`}
-        >
+        <div className="fixed bottom-20 md:bottom-5 right-3 sm:right-5 left-3 sm:left-auto z-50 flex justify-end pointer-events-none">
           <div
-            className={`w-2 h-2 rounded-full shrink-0 ${
+            className={`pointer-events-auto px-4 py-3 rounded-lg shadow-xl border text-xs font-medium flex items-center gap-2.5 transition-all max-w-sm ${
               liveToast.type === 'success'
-                ? 'bg-emerald-400'
+                ? 'bg-emerald-900 text-white border-emerald-700'
                 : liveToast.type === 'alert'
-                ? 'bg-amber-400'
-                : 'bg-blue-400'
+                ? 'bg-amber-900 text-white border-amber-700'
+                : 'bg-slate-900 text-white border-slate-700'
             }`}
-          />
-          <span className="flex-1">{liveToast.message}</span>
-          <button
-            onClick={() => setLiveToast(null)}
-            className="text-slate-400 hover:text-white transition-colors"
           >
-            ×
-          </button>
+            <div
+              className={`w-2 h-2 rounded-full shrink-0 ${
+                liveToast.type === 'success'
+                  ? 'bg-emerald-400'
+                  : liveToast.type === 'alert'
+                  ? 'bg-amber-400'
+                  : 'bg-blue-400'
+              }`}
+            />
+            <span className="flex-1">{liveToast.message}</span>
+            <button
+              type="button"
+              onClick={() => setLiveToast(null)}
+              className="p-1 -mr-1 text-slate-400 hover:text-white transition-colors"
+              aria-label="Tutup notifikasi"
+            >
+              ×
+            </button>
+          </div>
         </div>
       )}
 
       {/* TOP BAR: Zone 1 (Wordmark & Status) - Zone 2 (Nav links) - Zone 3 (Profile & Utilities) */}
       <header className="shrink-0 sticky top-0 z-40 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 transition-colors">
-        <div className="max-w-7xl w-full mx-auto px-2.5 sm:px-6 lg:px-8 h-14 sm:h-15 flex items-center justify-between gap-1.5 sm:gap-4 overflow-hidden">
+        <div className="max-w-7xl w-full mx-auto px-2.5 sm:px-6 lg:px-8 h-14 sm:h-15 flex items-center justify-between gap-1.5 sm:gap-4">
           {/* Zone 1: Brand Wordmark & Cloud Status */}
           <div className="flex items-center gap-2 sm:gap-3 shrink-0 min-w-0">
             <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-blue-600 flex items-center justify-center text-white shadow-xs shrink-0">
@@ -2110,420 +2237,152 @@ export default function App() {
               </div>
             </div>
 
-            {/* 1. Mobile Touch-Friendly Card List (md:hidden) */}
-            <div className="block md:hidden flex-1 min-h-0 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
-              {isLoading ? (
-                <div className="py-12 text-center text-xs text-slate-400 dark:text-slate-500">
-                  Memuat data inventaris stok opname...
-                </div>
-              ) : filteredItems.length === 0 ? (
-                <div className="py-12 text-center text-xs text-slate-500 dark:text-slate-400 space-y-3">
-                  <p>Tidak ada barang yang cocok dengan filter atau pencarian.</p>
-                  {activeUser === 'IYAN' && (
+            {/* Viewport-aware Item List: mounts ONLY Mobile Cards (<768px) OR Desktop Table (>=768px) */}
+            {!isDesktopViewport ? (
+              <div className="flex-1 min-h-0 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
+                {isLoading ? (
+                  <div className="py-12 text-center text-xs text-slate-400 dark:text-slate-500">
+                    Memuat data inventaris stok opname...
+                  </div>
+                ) : filteredItems.length === 0 ? (
+                  <div className="py-12 text-center text-xs text-slate-500 dark:text-slate-400 space-y-3">
+                    <p>Tidak ada barang yang cocok dengan filter atau pencarian.</p>
+                    {activeUser === 'IYAN' && (
+                      <button
+                        type="button"
+                        onClick={() => handleOpenImportExport('import')}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900 border border-emerald-200 dark:border-emerald-800 rounded-lg shadow-2xs transition-colors"
+                      >
+                        <Upload className="w-3.5 h-3.5" />
+                        <span>Import Data dari File XLSX</span>
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    {visibleItems.map((item) => (
+                      <MobileInventoryCard
+                        key={item.id}
+                        item={item}
+                        isDuplicateSku={duplicateAnalysis.duplicateSkus.has((item.sku || '').trim().toUpperCase())}
+                        isDuplicateBarcode={Boolean(item.barcode && duplicateAnalysis.duplicateBarcodes.has(item.barcode.trim()))}
+                        onQuickDelta={handleQuickDelta}
+                        onQuickAdjust={handleRowQuickAdjust}
+                        onOpenCalc={handleRowOpenCalc}
+                        onEditItem={handleRowEdit}
+                        onDeleteItem={handleRowDelete}
+                        onOpenDuplicate={handleRowOpenDuplicate}
+                      />
+                    ))}
+                    {hasMoreVisibleItems && (
+                      <div ref={loadMoreSentinelRef} className="p-3 flex items-center justify-center gap-2 bg-slate-50/70 dark:bg-slate-800/40">
+                        <button
+                          type="button"
+                          onClick={() => setVisibleLimit((prev) => prev + 120)}
+                          className="px-3.5 py-2 text-xs font-semibold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900 border border-blue-200 dark:border-blue-800 rounded-lg active:scale-95 transition-transform"
+                        >
+                          Muat +120 ({filteredItems.length - visibleItems.length} tersisa)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setVisibleLimit(filteredItems.length)}
+                          className="px-3 py-2 text-xs font-medium text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg active:scale-95 transition-transform"
+                        >
+                          Tampilkan Semua
+                        </button>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            ) : (
+              <div className="flex-1 min-h-0 overflow-y-auto overflow-x-auto relative">
+                <table className="w-full text-xs text-left">
+                  <thead className="sticky top-0 z-10 bg-slate-100/95 dark:bg-slate-800/95 backdrop-blur-xs text-slate-700 dark:text-slate-200 font-semibold border-b border-slate-200 dark:border-slate-700 shadow-2xs">
+                    <tr>
+                      <th className="px-3.5 py-2.5">SKU & BARCODE</th>
+                      <th className="px-3.5 py-2.5 min-w-[200px]">NAMA BARANG</th>
+                      <th className="px-3.5 py-2.5">KATEGORI</th>
+                      <th className="px-3.5 py-2.5 text-center">STOK FISIK (OPNAME)</th>
+                      <th className="px-3.5 py-2.5 text-right">STOK SISTEM</th>
+                      <th className="px-3.5 py-2.5 text-right">SELISIH</th>
+                      <th className="px-3.5 py-2.5 text-right">HARGA MODAL</th>
+                      <th className="px-3.5 py-2.5 text-right">TOTAL MODAL</th>
+                      <th className="px-3.5 py-2.5">PETUGAS</th>
+                      <th className="px-3.5 py-2.5 text-center">AKSI</th>
+                    </tr>
+                  </thead>
+
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {isLoading ? (
+                      <tr>
+                        <td colSpan={10} className="py-12 text-center text-slate-400 dark:text-slate-500">
+                          Memuat data inventaris stok opname...
+                        </td>
+                      </tr>
+                    ) : filteredItems.length === 0 ? (
+                      <tr>
+                        <td colSpan={10} className="py-12 text-center text-slate-500 dark:text-slate-400">
+                          <div className="space-y-3">
+                            <p>Tidak ada barang yang cocok dengan filter atau pencarian.</p>
+                            {activeUser === 'IYAN' && (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenImportExport('import')}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900 border border-emerald-200 dark:border-emerald-800 rounded-lg shadow-2xs transition-colors"
+                              >
+                                <Upload className="w-3.5 h-3.5" />
+                                <span>Import Data dari File XLSX</span>
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ) : (
+                      visibleItems.map((item) => (
+                        <DesktopInventoryRow
+                          key={item.id}
+                          item={item}
+                          isDuplicateSku={duplicateAnalysis.duplicateSkus.has((item.sku || '').trim().toUpperCase())}
+                          isDuplicateBarcode={Boolean(item.barcode && duplicateAnalysis.duplicateBarcodes.has(item.barcode.trim()))}
+                          onQuickDelta={handleQuickDelta}
+                          onQuickAdjust={handleRowQuickAdjust}
+                          onOpenCalc={handleRowOpenCalc}
+                          onEditItem={handleRowEdit}
+                          onDeleteItem={handleRowDelete}
+                          onOpenDuplicate={handleRowOpenDuplicate}
+                        />
+                      ))
+                    )}
+                  </tbody>
+                </table>
+
+                {hasMoreVisibleItems && (
+                  <div ref={loadMoreSentinelRef} className="p-3 flex items-center justify-center gap-2 border-t border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40">
                     <button
                       type="button"
-                      onClick={() => handleOpenImportExport('import')}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900 border border-emerald-200 dark:border-emerald-800 rounded-lg shadow-2xs transition-colors"
+                      onClick={() => setVisibleLimit((prev) => prev + 120)}
+                      className="px-3.5 py-1.5 text-xs font-semibold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900 border border-blue-200 dark:border-blue-800 rounded-lg active:scale-95 transition-transform"
                     >
-                      <Upload className="w-3.5 h-3.5" />
-                      <span>Import Data dari File XLSX</span>
+                      Muat +120 Barang Lainnya ({filteredItems.length - visibleItems.length} tersisa)
                     </button>
-                  )}
-                </div>
-              ) : (
-                filteredItems.map((item) => {
-                  const qty = item.quantity || 0;
-                  const sysQty = item.quantitySystem || 0;
-                  const diff = qty - sysQty;
-
-                  return (
-                    <div key={item.id} className="p-3.5 space-y-2.5 hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition-colors">
-                      {/* Top Row: SKU, Kategori & Selisih Status Badge */}
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="font-mono font-bold text-[11px] text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/60 px-1.5 py-0.5 rounded">
-                              {item.sku}
-                            </span>
-                            {duplicateAnalysis.duplicateSkus.has((item.sku || '').trim().toUpperCase()) && (
-                              <button
-                                type="button"
-                                onClick={() => setIsDuplicateModalOpen(true)}
-                                className="text-[9px] font-sans font-bold px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/40 hover:bg-amber-500/30 transition-colors flex items-center gap-0.5"
-                                title="SKU ini digunakan oleh beberapa barang. Ketuk untuk melihat."
-                              >
-                                ⚠️ SKU Ganda
-                              </button>
-                            )}
-                            <span className="text-[10px] text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
-                              {item.kategori}
-                            </span>
-                            <span className="text-[10px] font-mono text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
-                              {item.satuan || 'pcs'}
-                            </span>
-                            {item.status && item.status !== 'AKTIF' && (
-                              <span
-                                className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${
-                                  item.status === 'NONAKTIF'
-                                    ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
-                                    : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300'
-                                }`}
-                              >
-                                {item.status}
-                              </span>
-                            )}
-                            {item.stokMinimum !== undefined && qty <= item.stokMinimum && (
-                              <span className="text-[9px] font-bold px-1.5 py-0.2 bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300 rounded">
-                                Min: {item.stokMinimum}
-                              </span>
-                            )}
-                          </div>
-                          <h4 className="font-bold text-sm text-slate-900 dark:text-white mt-1 leading-snug">
-                            {item.namaBarang}
-                          </h4>
-                          {item.barcode && (
-                            <div className="flex items-center gap-1.5 text-[11px] font-mono text-slate-400 dark:text-slate-500 mt-0.5 flex-wrap">
-                              <span>Barcode: {item.barcode}</span>
-                              {duplicateAnalysis.duplicateBarcodes.has(item.barcode.trim()) && (
-                                <button
-                                  type="button"
-                                  onClick={() => setIsDuplicateModalOpen(true)}
-                                  className="text-[9px] font-sans font-bold px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-700 dark:text-rose-300 border border-rose-500/40 hover:bg-rose-500/30 transition-colors"
-                                  title="Barcode ini digunakan oleh beberapa barang. Ketuk untuk melihat."
-                                >
-                                  ⚠️ Barcode Ganda
-                                </button>
-                              )}
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Status Badge */}
-                        <div className="shrink-0 text-right">
-                          <span
-                            className={`inline-block text-[11px] font-mono font-bold px-2 py-0.5 rounded-full ${
-                              diff === 0
-                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
-                                : diff < 0
-                                ? 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300'
-                                : 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300'
-                            }`}
-                          >
-                            {diff === 0 ? '✓ Cocok' : diff < 0 ? `${diff} ${item.satuan || 'pcs'}` : `+${diff} ${item.satuan || 'pcs'}`}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Bottom Row: System Qty & Big Touch Stepper Counter */}
-                      <div className="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-800/60">
-                        <div className="text-xs">
-                          <div className="text-slate-500 dark:text-slate-400">
-                            Sistem: <strong className="font-mono text-slate-800 dark:text-slate-200">{sysQty} {item.satuan || 'pcs'}</strong>
-                          </div>
-                          <div className="text-[11px] font-mono text-slate-500 dark:text-slate-400">
-                            Modal: {formatRupiah(item.hargaModal)}
-                            {item.hargaJual ? ` • Jual: ${formatRupiah(item.hargaJual)}` : ''}
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-1.5">
-                          {/* Ergonomic Mobile Thumb Stepper */}
-                          <div className="inline-flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700 shadow-2xs">
-                            <button
-                              type="button"
-                              onClick={() => handleQuickDelta(item, -1)}
-                              className="w-10 h-10 rounded-lg bg-white dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 active:scale-90 text-slate-800 dark:text-white flex items-center justify-center font-black text-lg shadow-xs transition-transform"
-                              title="Kurangi 1 unit fisik"
-                            >
-                              -
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setCalcTargetItem(item);
-                                setIsGlobalCalcOpen(true);
-                              }}
-                              className="px-3.5 py-1.5 font-mono font-black text-base text-blue-600 dark:text-blue-400 flex items-center gap-1 active:scale-95 transition-transform"
-                              title="Ketuk angka untuk buka kalkulator kuantitas (dus/lusin)"
-                            >
-                              <Calculator className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                              <span>{qty}</span>
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => handleQuickDelta(item, 1)}
-                              className="w-10 h-10 rounded-lg bg-blue-600 hover:bg-blue-700 active:scale-90 text-white flex items-center justify-center font-black text-lg shadow-xs transition-transform"
-                              title="Tambah 1 unit fisik"
-                            >
-                              +
-                            </button>
-                          </div>
-
-                          {/* Item Edit */}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditingItem(item);
-                              setIsItemFormOpen(true);
-                            }}
-                            className="p-1.5 text-slate-400 hover:text-blue-600 rounded-md"
-                            title="Edit Barang"
-                          >
-                            <Edit2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-
-            {/* 2. Desktop Full Table (hidden md:block) */}
-            <div className="hidden md:block flex-1 min-h-0 overflow-y-auto overflow-x-auto relative">
-              <table className="w-full text-xs text-left">
-                <thead className="sticky top-0 z-10 bg-slate-100/95 dark:bg-slate-800/95 backdrop-blur-xs text-slate-700 dark:text-slate-200 font-semibold border-b border-slate-200 dark:border-slate-700 shadow-2xs">
-                  <tr>
-                    <th className="px-3.5 py-2.5">SKU & BARCODE</th>
-                    <th className="px-3.5 py-2.5 min-w-[200px]">NAMA BARANG</th>
-                    <th className="px-3.5 py-2.5">KATEGORI</th>
-                    <th className="px-3.5 py-2.5 text-center">STOK FISIK (OPNAME)</th>
-                    <th className="px-3.5 py-2.5 text-right">STOK SISTEM</th>
-                    <th className="px-3.5 py-2.5 text-right">SELISIH</th>
-                    <th className="px-3.5 py-2.5 text-right">HARGA MODAL</th>
-                    <th className="px-3.5 py-2.5 text-right">TOTAL MODAL</th>
-                    <th className="px-3.5 py-2.5">PETUGAS</th>
-                    <th className="px-3.5 py-2.5 text-center">AKSI</th>
-                  </tr>
-                </thead>
-
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {isLoading ? (
-                    <tr>
-                      <td colSpan={10} className="py-12 text-center text-slate-400 dark:text-slate-500">
-                        Memuat data inventaris stok opname...
-                      </td>
-                    </tr>
-                  ) : filteredItems.length === 0 ? (
-                    <tr>
-                      <td colSpan={10} className="py-12 text-center text-slate-500 dark:text-slate-400">
-                        <div className="space-y-3">
-                          <p>Tidak ada barang yang cocok dengan filter atau pencarian.</p>
-                          {activeUser === 'IYAN' && (
-                            <button
-                              type="button"
-                              onClick={() => handleOpenImportExport('import')}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900 border border-emerald-200 dark:border-emerald-800 rounded-lg shadow-2xs transition-colors"
-                            >
-                              <Upload className="w-3.5 h-3.5" />
-                              <span>Import Data dari File XLSX</span>
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredItems.map((item) => {
-                      const qty = item.quantity || 0;
-                      const sysQty = item.quantitySystem || 0;
-                      const diff = qty - sysQty;
-                      const totalModal = qty * (item.hargaModal || 0);
-
-                      return (
-                        <tr
-                          key={item.id}
-                          className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group"
-                        >
-                          {/* SKU & Barcode */}
-                          <td className="px-3.5 py-2 font-mono">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="font-bold text-slate-900 dark:text-slate-100">{item.sku}</span>
-                              {duplicateAnalysis.duplicateSkus.has((item.sku || '').trim().toUpperCase()) && (
-                                <button
-                                  type="button"
-                                  onClick={() => setIsDuplicateModalOpen(true)}
-                                  className="text-[9px] font-sans font-bold px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/40 hover:bg-amber-500/30 transition-colors"
-                                  title="SKU ini digunakan oleh beberapa barang. Klik untuk rincian."
-                                >
-                                  ⚠️ SKU Ganda
-                                </button>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-1.5 text-[10px] text-slate-500 dark:text-slate-400 font-mono mt-0.5 flex-wrap">
-                              <span>{item.barcode || '-'}</span>
-                              {item.barcode && duplicateAnalysis.duplicateBarcodes.has(item.barcode.trim()) && (
-                                <button
-                                  type="button"
-                                  onClick={() => setIsDuplicateModalOpen(true)}
-                                  className="text-[9px] font-sans font-bold px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-700 dark:text-rose-300 border border-rose-500/40 hover:bg-rose-500/30 transition-colors"
-                                  title="Barcode ini digunakan oleh beberapa barang. Klik untuk rincian."
-                                >
-                                  ⚠️ Barcode Ganda
-                                </button>
-                              )}
-                            </div>
-                          </td>
-
-                          {/* Nama Barang & Satuan / Status */}
-                          <td className="px-3.5 py-2">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="font-medium text-slate-900 dark:text-white leading-tight">
-                                {item.namaBarang}
-                              </span>
-                              <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1 rounded">
-                                {item.satuan || 'pcs'}
-                              </span>
-                              {item.status && item.status !== 'AKTIF' && (
-                                <span
-                                  className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${
-                                    item.status === 'NONAKTIF'
-                                      ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
-                                      : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300'
-                                  }`}
-                                >
-                                  {item.status}
-                                </span>
-                              )}
-                              {item.stokMinimum !== undefined && qty <= item.stokMinimum && (
-                                <span className="text-[9px] font-bold px-1.5 py-0.2 bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300 rounded" title={`Batas minimum: ${item.stokMinimum}`}>
-                                  Restock (≤{item.stokMinimum})
-                                </span>
-                              )}
-                            </div>
-                          </td>
-
-                          {/* Kategori */}
-                          <td className="px-3.5 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">
-                            {item.kategori}
-                          </td>
-
-                          {/* Quantity Fisik with Quick Adjustment & Calculator */}
-                          <td className="px-3.5 py-2 text-center whitespace-nowrap">
-                            <div className="inline-flex items-center justify-center gap-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-0.5">
-                              <button
-                                type="button"
-                                onClick={() => handleQuickDelta(item, -1)}
-                                className="w-6 h-6 rounded bg-white dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 flex items-center justify-center font-bold text-xs shadow-2xs transition-colors"
-                                title={`Kurangi 1 ${item.satuan || 'pcs'}`}
-                              >
-                                -
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => setQuickAdjustItem(item)}
-                                className="px-2 py-0.5 font-mono font-bold text-sm text-slate-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-                                title="Klik untuk edit cepat"
-                              >
-                                {qty} <span className="text-[10px] font-normal text-slate-400">{item.satuan || 'pcs'}</span>
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => handleQuickDelta(item, 1)}
-                                className="w-6 h-6 rounded bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center font-bold text-xs shadow-2xs transition-colors"
-                                title={`Tambah 1 ${item.satuan || 'pcs'} (+1)`}
-                              >
-                                +
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setCalcTargetItem(item);
-                                  setIsGlobalCalcOpen(true);
-                                }}
-                                className="w-6 h-6 rounded bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 flex items-center justify-center text-xs transition-colors"
-                                title="Hitung kuantitas dus / rak dengan kalkulator"
-                              >
-                                <Calculator className="w-3 h-3" />
-                              </button>
-                            </div>
-                          </td>
-
-                          {/* Quantity Sistem (stok_awal) */}
-                          <td className="px-3.5 py-2 text-right font-mono text-slate-500 dark:text-slate-400 whitespace-nowrap">
-                            {sysQty} {item.satuan || 'pcs'}
-                          </td>
-
-                          {/* Selisih */}
-                          <td className="px-3.5 py-2 text-right font-mono font-bold whitespace-nowrap">
-                            {diff === 0 ? (
-                              <span className="text-emerald-700 dark:text-emerald-400">0</span>
-                            ) : diff < 0 ? (
-                              <span className="text-red-600 dark:text-red-400">{diff} {item.satuan || 'pcs'}</span>
-                            ) : (
-                              <span className="text-blue-600 dark:text-blue-400">+{diff} {item.satuan || 'pcs'}</span>
-                            )}
-                          </td>
-
-                          {/* Harga Modal & Jual */}
-                          <td className="px-3.5 py-2 text-right font-mono whitespace-nowrap">
-                            <span className="text-slate-800 dark:text-slate-200 block">{formatRupiah(item.hargaModal)}</span>
-                            {item.hargaJual ? (
-                              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 block">Jual: {formatRupiah(item.hargaJual)}</span>
-                            ) : null}
-                          </td>
-
-                          {/* Total Modal */}
-                          <td className="px-3.5 py-2 text-right font-mono font-bold text-slate-900 dark:text-white whitespace-nowrap">
-                            {formatRupiah(totalModal)}
-                          </td>
-
-                          {/* Petugas & Timestamp */}
-                          <td className="px-3.5 py-2 whitespace-nowrap">
-                            <span className="font-semibold text-slate-800 dark:text-slate-200 text-[11px] block">
-                              {item.lastUpdatedBy || '-'}
-                            </span>
-                            <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">
-                              {item.updatedAt
-                                ? new Date(item.updatedAt).toLocaleTimeString('id-ID', {
-                                    hour: '2-digit',
-                                    minute: '2-digit',
-                                  })
-                                : '-'}
-                            </span>
-                          </td>
-
-                          {/* Aksi (Edit, Hapus) */}
-                          <td className="px-3.5 py-2 text-center whitespace-nowrap">
-                            <div className="flex items-center justify-center gap-1">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setEditingItem(item);
-                                  setIsItemFormOpen(true);
-                                }}
-                                className="p-1.5 text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md transition-colors"
-                                title="Edit Detail Barang"
-                              >
-                                <Edit2 className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteItem(item)}
-                                className="p-1.5 text-slate-400 dark:text-slate-500 hover:text-red-600 dark:hover:text-red-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md transition-colors"
-                                title="Hapus Barang"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
+                    <button
+                      type="button"
+                      onClick={() => setVisibleLimit(filteredItems.length)}
+                      className="px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 rounded-lg active:scale-95 transition-transform"
+                    >
+                      Tampilkan Semua ({filteredItems.length})
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Table Footer Summary (Sticky pinned at bottom on PC & tablet) */}
             <div className="shrink-0 p-2.5 sm:p-3 bg-slate-50 dark:bg-slate-800/90 border-t border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-600 dark:text-slate-400 gap-2 shadow-2xs">
               <div className="flex items-center gap-2">
                 <span>
-                  Menampilkan <strong>{filteredItems.length}</strong> dari <strong>{items.length}</strong> barang
+                  Menampilkan <strong>{visibleItems.length}</strong>{hasMoreVisibleItems ? ` dari ${filteredItems.length}` : ''} barang ({items.length} total)
                 </span>
                 <span>·</span>
                 <span>
@@ -2532,7 +2391,7 @@ export default function App() {
               </div>
               <div className="flex items-center gap-3 font-mono">
                 <span>
-                  Total Modal Filter: <strong className="text-emerald-700 dark:text-emerald-400">{formatRupiah(filteredItems.reduce((acc, curr) => acc + curr.quantity * curr.hargaModal, 0))}</strong>
+                  Total Modal Filter: <strong className="text-emerald-700 dark:text-emerald-400">{formatRupiah(filteredTotalModal)}</strong>
                 </span>
               </div>
             </div>

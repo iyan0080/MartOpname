@@ -72,11 +72,7 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
     }
   }, [isOpen, defaultTab]);
 
-  if (!isOpen) return null;
-
-  const isUserIyan = activeUser === 'IYAN' && isAuthorizedIyan;
-
-  // Analysis of duplicate SKUs & Barcodes in parsedPreview
+  // Analysis of duplicate SKUs & Barcodes in parsedPreview (must run unconditionally before early return)
   const duplicateSkusInImport = useMemo(() => {
     if (!parsedPreview) return new Map<string, number>();
     const counts = new Map<string, number>();
@@ -104,6 +100,10 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
     });
     return dupes;
   }, [parsedPreview]);
+
+  if (!isOpen) return null;
+
+  const isUserIyan = activeUser === 'IYAN' && isAuthorizedIyan;
 
   const handleFileChange = async (file: File) => {
     if (!file) return;

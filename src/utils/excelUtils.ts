@@ -1,14 +1,29 @@
 import * as XLSX from 'xlsx';
 import { InventoryItem, InventoryStats, OpnameSession, FinanceRecord } from '../types/inventory.ts';
 
-// Format currency as Indonesian Rupiah
+const rupiahFormatter = new Intl.NumberFormat('id-ID', {
+  style: 'currency',
+  currency: 'IDR',
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 0,
+});
+
+const shortTimeFormatter = new Intl.DateTimeFormat('id-ID', {
+  hour: '2-digit',
+  minute: '2-digit',
+});
+
+// Format currency as Indonesian Rupiah (cached formatter for high-frequency renders)
 export function formatRupiah(amount: number): string {
-  return new Intl.NumberFormat('id-ID', {
-    style: 'currency',
-    currency: 'IDR',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(amount || 0);
+  return rupiahFormatter.format(amount || 0);
+}
+
+// Format ISO timestamp as HH:mm (cached formatter)
+export function formatShortTime(isoString?: string): string {
+  if (!isoString) return '-';
+  const date = new Date(isoString);
+  if (Number.isNaN(date.getTime())) return '-';
+  return shortTimeFormatter.format(date);
 }
 
 // Template kolom standar resmi import/export Mart

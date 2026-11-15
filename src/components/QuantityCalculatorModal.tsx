@@ -1,17 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import {
   X,
-  Calculator,
-  Plus,
-  Minus,
   Check,
-  RotateCcw,
   Package,
   Layers,
-  ArrowRight,
   Search,
-  Sparkles,
-  Cloud,
+  Plus,
 } from 'lucide-react';
 import { InventoryItem } from '../types/inventory.ts';
 
@@ -40,6 +34,10 @@ export const QuantityCalculatorModal: React.FC<QuantityCalculatorModalProps> = (
   const [calcResult, setCalcResult] = useState<number>(0);
   const [calcHistory, setCalcHistory] = useState<string[]>([]);
 
+  // Controlled box multiplier state (Pengisian Isi Per Dus)
+  const [boxCount, setBoxCount] = useState<number | ''>(1);
+  const [itemsPerBox, setItemsPerBox] = useState<number | ''>('');
+
   // Grid / Shelf counter state (baris x kedalaman/tumpukan + sisa)
   const [gridFacing, setGridFacing] = useState<number | ''>(4);
   const [gridDepth, setGridDepth] = useState<number | ''>(6);
@@ -61,14 +59,16 @@ export const QuantityCalculatorModal: React.FC<QuantityCalculatorModalProps> = (
       setDisplayExp('0');
       setCalcResult(0);
     }
+    setBoxCount(1);
+    setItemsPerBox('');
+    setCalcMode('standard');
+    setSelectionError(null);
   }, [targetItem, isOpen]);
 
   // Evaluate mathematical expression safely
   const evaluateExpression = (expr: string): number => {
     try {
-      // Replace x with * and ÷ with /
       const sanitized = expr.replace(/×/g, '*').replace(/÷/g, '/');
-      // Only allow digits, basic operators, spaces, parentheses, decimals
       if (!/^[\d+\-*/().\s]+$/.test(sanitized)) {
         return 0;
       }
@@ -93,15 +93,16 @@ export const QuantityCalculatorModal: React.FC<QuantityCalculatorModalProps> = (
     }
   }, [displayExp]);
 
-  // Recalculate grid
+  // Recalculate grid only when in grid mode
   useEffect(() => {
+    if (calcMode !== 'grid') return;
     const f = typeof gridFacing === 'number' ? gridFacing : 0;
     const d = typeof gridDepth === 'number' ? gridDepth : 0;
     const e = typeof gridExtra === 'number' ? gridExtra : 0;
     const total = f * d + e;
     setCalcResult(Math.max(0, total));
     setDisplayExp(`${f} × ${d} + ${e}`);
-  }, [gridFacing, gridDepth, gridExtra]);
+  }, [calcMode, gridFacing, gridDepth, gridExtra]);
 
   if (!isOpen) return null;
 
@@ -140,7 +141,7 @@ export const QuantityCalculatorModal: React.FC<QuantityCalculatorModalProps> = (
     });
   };
 
-  // Quick Pack additions (Mart Presets)
+  // Add calculated dus * isiPerDus
   const addPackMultiplier = (packName: string, count: number) => {
     setDisplayExp((prev) => {
       if (prev === '0') {
@@ -151,6 +152,22 @@ export const QuantityCalculatorModal: React.FC<QuantityCalculatorModalProps> = (
     setCalcHistory((prev) => [`+ ${count} pcs (${packName})`, ...prev.slice(0, 4)]);
   };
 
+  const handleAddBoxInput = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const d = typeof boxCount === 'number' ? boxCount : 0;
+    const isi = typeof itemsPerBox === 'number' ? itemsPerBox : 0;
+    if (d > 0 && isi > 0) {
+      addPackMultiplier(`${d} Dus × ${isi} pcs`, d * isi);
+      setBoxCount(1);
+      setItemsPerBox('');
+    }
+  };
+
+  const boxSubtotal =
+    typeof boxCount === 'number' && typeof itemsPerBox === 'number' && boxCount > 0 && itemsPerBox > 0
+      ? boxCount * itemsPerBox
+      : 0;
+
   const handleApply = async () => {
     if (onSelectResult) {
       onSelectResult(calcResult);
@@ -160,13 +177,12 @@ export const QuantityCalculatorModal: React.FC<QuantityCalculatorModalProps> = (
 
     const currentTargetId = targetItem?.id || selectedItemId;
     if (!currentTargetId) {
-      setSelectionError('Silakan pilih salah satu barang terlebih dahulu dari daftar di atas.');
+      setSelectionError('Silakan pilih salah satu barang terlebih dahulu dari kolom pencarian.');
       return;
     }
     setSelectionError(null);
 
     setIsApplying(true);
-    const targetObj = items.find((i) => i.id === currentTargetId) || targetItem;
     const success = await onApplyQuantity(
       currentTargetId,
       calcResult,
@@ -195,37 +211,8 @@ export const QuantityCalculatorModal: React.FC<QuantityCalculatorModalProps> = (
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/65 backdrop-blur-xs">
       <div className="relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[92vh]">
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60">
-          <div className="flex items-center gap-2.5">
-            <div className="p-1.5 bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 rounded-lg">
-              <Calculator className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <h3 className="text-sm font-bold text-slate-900 dark:text-white leading-tight">
-                  Kalkulator Hitung Kuantitas Barang Mart
-                </h3>
-                <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[9px] font-semibold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300/40">
-                  <Cloud className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400" />
-                  Auto-Save Cloud
-                </span>
-              </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Hitung jumlah karton, dus, lusin, baris rak, atau pecahan eceran
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
         {selectionError && (
-          <div className="px-5 py-2 bg-amber-50 dark:bg-amber-950/60 border-b border-amber-200 dark:border-amber-800 text-xs text-amber-800 dark:text-amber-200 flex items-center justify-between">
+          <div className="px-4 py-2 bg-amber-50 dark:bg-amber-950/60 border-b border-amber-200 dark:border-amber-800 text-xs text-amber-800 dark:text-amber-200 flex items-center justify-between">
             <span>{selectionError}</span>
             <button
               type="button"
@@ -237,34 +224,9 @@ export const QuantityCalculatorModal: React.FC<QuantityCalculatorModalProps> = (
           </div>
         )}
 
-        {/* Selected Target Item Card */}
-        {selectedItemObj ? (
-          <div className="px-5 py-2.5 bg-blue-50/70 dark:bg-blue-950/40 border-b border-blue-100 dark:border-blue-900/60 flex items-center justify-between">
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-1.5">
-                <span className="text-[10px] font-mono font-bold bg-blue-200/70 dark:bg-blue-900 text-blue-900 dark:text-blue-200 px-1.5 py-0.2 rounded">
-                  {selectedItemObj.sku}
-                </span>
-                <p className="text-xs font-bold text-slate-900 dark:text-white truncate">{selectedItemObj.namaBarang}</p>
-              </div>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                Stok saat ini: <strong className="font-mono text-slate-800 dark:text-slate-200">{selectedItemObj.quantity} pcs</strong> · Sistem:{' '}
-                <span className="font-mono">{selectedItemObj.quantitySystem} pcs</span>
-              </p>
-            </div>
-            {!targetItem && (
-              <button
-                type="button"
-                onClick={() => setSelectedItemId('')}
-                className="text-[11px] text-blue-700 dark:text-blue-400 hover:underline shrink-0 ml-2"
-              >
-                Ganti Barang
-              </button>
-            )}
-          </div>
-        ) : (
-          /* Pick Item if standalone */
-          <div className="px-5 py-2.5 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-800">
+        {/* Standalone Item Picker (only shown when no item is preselected) */}
+        {!selectedItemObj && (
+          <div className="px-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-800">
             <div className="flex items-center gap-2">
               <Search className="w-3.5 h-3.5 text-slate-400 shrink-0" />
               <input
@@ -283,6 +245,8 @@ export const QuantityCalculatorModal: React.FC<QuantityCalculatorModalProps> = (
                     type="button"
                     onClick={() => {
                       setSelectedItemId(item.id);
+                      setDisplayExp(String(item.quantity || '0'));
+                      setCalcResult(item.quantity || 0);
                       setItemSearch('');
                     }}
                     className="w-full px-2.5 py-1.5 text-left text-xs hover:bg-slate-50 dark:hover:bg-slate-700/60 flex items-center justify-between"
@@ -296,34 +260,44 @@ export const QuantityCalculatorModal: React.FC<QuantityCalculatorModalProps> = (
           </div>
         )}
 
-        {/* Mode Selector */}
-        <div className="flex border-b border-slate-200 dark:border-slate-800 px-5 bg-white dark:bg-slate-900">
+        {/* Mode Selector & Compact Close Button */}
+        <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 px-4 bg-white dark:bg-slate-900 shrink-0">
+          <div className="flex items-center flex-1 overflow-x-auto">
+            <button
+              type="button"
+              onClick={() => setCalcMode('standard')}
+              className={`py-2.5 px-3 text-xs font-semibold border-b-2 flex items-center gap-1.5 transition-colors whitespace-nowrap ${
+                calcMode === 'standard'
+                  ? 'border-blue-600 text-blue-700 dark:text-blue-400'
+                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+              }`}
+            >
+              <Package className="w-3.5 h-3.5" /> Hitung Aritmatika & Dus
+            </button>
+            <button
+              type="button"
+              onClick={() => setCalcMode('grid')}
+              className={`py-2.5 px-3 text-xs font-semibold border-b-2 flex items-center gap-1.5 transition-colors whitespace-nowrap ${
+                calcMode === 'grid'
+                  ? 'border-blue-600 text-blue-700 dark:text-blue-400'
+                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5" /> Hitung Baris Rak & Display
+            </button>
+          </div>
           <button
             type="button"
-            onClick={() => setCalcMode('standard')}
-            className={`py-2 px-3 text-xs font-semibold border-b-2 flex items-center gap-1.5 transition-colors ${
-              calcMode === 'standard'
-                ? 'border-blue-600 text-blue-700 dark:text-blue-400'
-                : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
-            }`}
+            onClick={onClose}
+            className="p-1.5 ml-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors shrink-0"
+            title="Tutup Kalkulator"
           >
-            <Package className="w-3.5 h-3.5" /> Hitung Aritmatika & Dus
-          </button>
-          <button
-            type="button"
-            onClick={() => setCalcMode('grid')}
-            className={`py-2 px-3 text-xs font-semibold border-b-2 flex items-center gap-1.5 transition-colors ${
-              calcMode === 'grid'
-                ? 'border-blue-600 text-blue-700 dark:text-blue-400'
-                : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
-            }`}
-          >
-            <Layers className="w-3.5 h-3.5" /> Hitung Baris Rak & Display
+            <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Content Body */}
-        <div className="p-5 overflow-y-auto flex-1 space-y-4">
+        <div className="p-4 sm:p-5 overflow-y-auto flex-1 space-y-4">
           {/* Main Calculation Screen Display */}
           <div className="bg-slate-900 rounded-xl p-4 text-white font-mono shadow-inner border border-slate-800">
             <div className="text-right text-xs text-slate-400 min-h-[20px] overflow-x-auto whitespace-nowrap">
@@ -336,83 +310,67 @@ export const QuantityCalculatorModal: React.FC<QuantityCalculatorModalProps> = (
           </div>
 
           {calcMode === 'standard' ? (
-            <div className="space-y-4">
-              {/* Mart Packaging Presets (Karton, Lusin, Pack) */}
-              <div>
-                <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
-                  Preset Kemasan Mart Cepat:
-                </p>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => addPackMultiplier('1 Dus/Karton 24', 24)}
-                    className="p-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 rounded-lg text-left transition-colors"
-                  >
-                    <p className="text-[11px] font-bold text-slate-800 dark:text-slate-100">+1 Dus (24)</p>
-                    <p className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">+24 pcs</p>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => addPackMultiplier('1 Dus 48', 48)}
-                    className="p-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 rounded-lg text-left transition-colors"
-                  >
-                    <p className="text-[11px] font-bold text-slate-800 dark:text-slate-100">+1 Dus (48)</p>
-                    <p className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">+48 pcs</p>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => addPackMultiplier('1 Lusin', 12)}
-                    className="p-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 rounded-lg text-left transition-colors"
-                  >
-                    <p className="text-[11px] font-bold text-slate-800 dark:text-slate-100">+1 Lusin</p>
-                    <p className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">+12 pcs</p>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => addPackMultiplier('1 Pack 6', 6)}
-                    className="p-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 rounded-lg text-left transition-colors"
-                  >
-                    <p className="text-[11px] font-bold text-slate-800 dark:text-slate-100">+1 Pack (6)</p>
-                    <p className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">+6 pcs</p>
-                  </button>
+            <div className="space-y-3.5">
+              {/* Pengisian Isi Per Dus (Replaces Preset Kemasan Mart Cepat) */}
+              <form
+                onSubmit={handleAddBoxInput}
+                className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2.5"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                    <Package className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                    Pengisian Isi Per Dus
+                  </span>
+                  {boxSubtotal > 0 && (
+                    <span className="text-xs font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                      = {boxSubtotal} pcs
+                    </span>
+                  )}
                 </div>
-              </div>
 
-              {/* Multiplier Tool (Contoh: 3 Dus x 24 pcs) */}
-              <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-lg border border-slate-200 dark:border-slate-700 flex flex-wrap items-center gap-2 text-xs">
-                <span className="text-slate-600 dark:text-slate-300 font-medium">Beli Grosir:</span>
-                <input
-                  type="number"
-                  min="1"
-                  placeholder="Jumlah dus"
-                  id="calc-box-count"
-                  className="w-16 px-2 py-1 text-xs border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-slate-900 dark:text-white font-mono text-center"
-                  defaultValue={2}
-                />
-                <span className="text-slate-500 dark:text-slate-400 font-mono">dus ×</span>
-                <input
-                  type="number"
-                  min="1"
-                  placeholder="Isi/dus"
-                  id="calc-box-size"
-                  className="w-16 px-2 py-1 text-xs border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-slate-900 dark:text-white font-mono text-center"
-                  defaultValue={24}
-                />
-                <span className="text-slate-500 dark:text-slate-400 font-mono">pcs</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const count = parseInt((document.getElementById('calc-box-count') as HTMLInputElement)?.value, 10) || 0;
-                    const size = parseInt((document.getElementById('calc-box-size') as HTMLInputElement)?.value, 10) || 0;
-                    if (count > 0 && size > 0) {
-                      addPackMultiplier(`${count} Dus × ${size}`, count * size);
-                    }
-                  }}
-                  className="px-2.5 py-1 bg-slate-800 dark:bg-blue-600 hover:bg-slate-900 dark:hover:bg-blue-700 text-white rounded font-medium ml-auto transition-colors"
-                >
-                  Tambahkan
-                </button>
-              </div>
+                <div className="grid grid-cols-12 gap-2 items-end">
+                  <div className="col-span-4">
+                    <label className="block text-[11px] text-slate-500 dark:text-slate-400 mb-1">
+                      Jumlah Dus
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={boxCount}
+                      onChange={(e) =>
+                        setBoxCount(e.target.value === '' ? '' : Math.max(0, parseInt(e.target.value, 10) || 0))
+                      }
+                      placeholder="1"
+                      className="w-full px-2.5 py-1.5 text-xs border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-mono font-bold text-center focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                    />
+                  </div>
+                  <div className="col-span-4">
+                    <label className="block text-[11px] text-slate-500 dark:text-slate-400 mb-1">
+                      Isi Per Dus
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={itemsPerBox}
+                      onChange={(e) =>
+                        setItemsPerBox(e.target.value === '' ? '' : Math.max(0, parseInt(e.target.value, 10) || 0))
+                      }
+                      placeholder="Misal: 24"
+                      className="w-full px-2.5 py-1.5 text-xs border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-mono font-bold text-center focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                    />
+                  </div>
+                  <div className="col-span-4">
+                    <button
+                      type="submit"
+                      disabled={boxSubtotal <= 0}
+                      className="w-full py-1.5 px-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition-colors shadow-2xs"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Tambah</span>
+                    </button>
+                  </div>
+                </div>
+              </form>
 
               {/* Calculator Keypad */}
               <div className="grid grid-cols-4 gap-2 font-mono text-sm">

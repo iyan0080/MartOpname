@@ -22,14 +22,14 @@ export const MobileBottomDock: React.FC<MobileBottomDockProps> = ({
 
   return (
     <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 px-2 pt-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] shadow-xl transition-colors">
-      <div className="flex items-center justify-around relative">
+      <div className="flex items-center justify-around relative select-none">
         {/* Tab 1: Stok Opname */}
         <button
           type="button"
           onClick={() => onSelectTab('opname')}
-          className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all ${
+          className={`flex flex-col items-center justify-center py-1.5 px-3 rounded-xl active:scale-95 transition-transform ${
             activeTab === 'opname'
-              ? 'text-blue-600 dark:text-blue-400 font-bold scale-102'
+              ? 'text-blue-600 dark:text-blue-400 font-bold'
               : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 font-medium'
           }`}
         >
@@ -41,9 +41,9 @@ export const MobileBottomDock: React.FC<MobileBottomDockProps> = ({
         <button
           type="button"
           onClick={() => onSelectTab('laporan')}
-          className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all ${
+          className={`flex flex-col items-center justify-center py-1.5 px-3 rounded-xl active:scale-95 transition-transform ${
             activeTab === 'laporan'
-              ? 'text-blue-600 dark:text-blue-400 font-bold scale-102'
+              ? 'text-blue-600 dark:text-blue-400 font-bold'
               : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 font-medium'
           }`}
         >
@@ -56,10 +56,10 @@ export const MobileBottomDock: React.FC<MobileBottomDockProps> = ({
           <button
             type="button"
             onClick={onOpenScanner}
-            className="w-14 h-14 rounded-full bg-blue-600 hover:bg-blue-700 active:scale-90 text-white flex items-center justify-center shadow-lg shadow-blue-600/40 border-4 border-white dark:border-slate-900 transition-all cursor-pointer"
+            className="w-14 h-14 rounded-full bg-blue-600 hover:bg-blue-700 active:scale-90 text-white flex items-center justify-center shadow-lg shadow-blue-600/40 border-4 border-white dark:border-slate-900 transition-transform cursor-pointer"
             title="Buka Kamera Scan Barcode & QR Code"
           >
-            <Camera className="w-6 h-6 animate-pulse" />
+            <Camera className="w-6 h-6" />
           </button>
           <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 mt-0.5">
             SCAN
@@ -70,7 +70,7 @@ export const MobileBottomDock: React.FC<MobileBottomDockProps> = ({
         <button
           type="button"
           onClick={onOpenCalculator}
-          className="flex flex-col items-center justify-center py-1 px-2.5 rounded-xl text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 font-medium transition-all"
+          className="flex flex-col items-center justify-center py-1.5 px-3 rounded-xl text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 active:scale-95 font-medium transition-transform"
           title="Buka Kalkulator Kuantitas"
         >
           <Calculator className="w-5 h-5 mb-0.5" />
@@ -81,7 +81,7 @@ export const MobileBottomDock: React.FC<MobileBottomDockProps> = ({
         <button
           type="button"
           onClick={onOpenMenu}
-          className="flex flex-col items-center justify-center py-1 px-2.5 rounded-xl text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 font-medium relative transition-all"
+          className="flex flex-col items-center justify-center py-1.5 px-3 rounded-xl text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 active:scale-95 font-medium relative transition-transform"
           title="Buka Menu & Aksi Lainnya"
         >
           <Menu className="w-5 h-5 mb-0.5" />

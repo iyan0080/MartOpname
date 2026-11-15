@@ -10,7 +10,7 @@ function getAudioContext(): AudioContext | null {
     }
   }
   if (audioCtx && audioCtx.state === 'suspended') {
-    audioCtx.resume();
+    audioCtx.resume().catch(() => {});
   }
   return audioCtx;
 }
@@ -34,6 +34,15 @@ export function playScanSuccessSound() {
 
     osc.connect(gain);
     gain.connect(ctx.destination);
+
+    osc.onended = () => {
+      try {
+        osc.disconnect();
+        gain.disconnect();
+      } catch {
+        // ignore cleanup error
+      }
+    };
 
     osc.start();
     osc.stop(ctx.currentTime + 0.12);
@@ -60,6 +69,15 @@ export function playScanWarningSound() {
 
     osc.connect(gain);
     gain.connect(ctx.destination);
+
+    osc.onended = () => {
+      try {
+        osc.disconnect();
+        gain.disconnect();
+      } catch {
+        // ignore cleanup error
+      }
+    };
 
     osc.start();
     osc.stop(ctx.currentTime + 0.28);
