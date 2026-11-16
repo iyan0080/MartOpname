@@ -33,6 +33,7 @@ import {
   batchSaveItemsToFirestore,
   replaceAllItemsInFirestore,
   saveUserToFirestore,
+  mergeUsersWithDefaults,
 } from './lib/firebase.ts';
 import { INITIAL_ITEMS, INITIAL_USERS } from './data/seedData.ts';
 import { calculateInventoryStats } from './utils/statsUtils.ts';
@@ -453,11 +454,32 @@ export default function App() {
     });
 
     // Real-time listener for Users from Firebase Cloud Firestore
-    const unsubscribeUsers = subscribeToFirestoreUsers((cloudUsers) => {
-      if (cloudUsers && cloudUsers.length > 0) {
-        setUsers(cloudUsers);
+    // Always merge with the 5 core accounts (IYAN, HENDRI, AZYMA, RAIHAN, NURI) and seed any missing ones
+    let hasSeededMissingDefaults = false;
+    const unsubscribeUsers = subscribeToFirestoreUsers(
+      (cloudUsers) => {
+        const mergedUsers = mergeUsersWithDefaults(cloudUsers, INITIAL_USERS);
+        setUsers(mergedUsers);
+
+        if (!hasSeededMissingDefaults) {
+          hasSeededMissingDefaults = true;
+          const existingNames = new Set(
+            cloudUsers.map((u) => (u?.name || '').trim().toUpperCase()).filter(Boolean)
+          );
+          const missingDefaults = INITIAL_USERS.filter(
+            (def) => !existingNames.has(def.name.trim().toUpperCase())
+          );
+          if (missingDefaults.length > 0) {
+            Promise.all(missingDefaults.map((defUser) => saveUserToFirestore(defUser))).catch((err) => {
+              console.warn('Auto-seed default team accounts failed:', err);
+            });
+          }
+        }
+      },
+      () => {
+        setUsers((prev) => mergeUsersWithDefaults(prev, INITIAL_USERS));
       }
-    });
+    );
 
     // Real-time listener for Opname Session (Tanggal opname & periode)
     const unsubscribeSession = subscribeToOpnameSession(

@@ -297,6 +297,56 @@ export function subscribeToFirestoreLogs(
   );
 }
 
+// Merge Cloud Firestore users with required default team accounts (deduplicated by uppercase name)
+export function mergeUsersWithDefaults(cloudUsers: MartUser[], defaultUsers: MartUser[]): MartUser[] {
+  const cloudByName = new Map<string, MartUser>();
+  cloudUsers.forEach((u) => {
+    const key = (u?.name || '').trim().toUpperCase();
+    if (key && !cloudByName.has(key)) {
+      cloudByName.set(key, {
+        ...u,
+        name: key,
+      });
+    }
+  });
+
+  const merged: MartUser[] = [];
+  const seenNames = new Set<string>();
+
+  // 1. Always preserve the 5 core team accounts in canonical order, enriching from Cloud if present
+  defaultUsers.forEach((def) => {
+    const key = def.name.trim().toUpperCase();
+    const cloudMatch = cloudByName.get(key);
+    merged.push(
+      cloudMatch
+        ? {
+            ...def,
+            ...cloudMatch,
+            name: key,
+            role: cloudMatch.role || def.role,
+            color: cloudMatch.color || def.color,
+          }
+        : def
+    );
+    seenNames.add(key);
+  });
+
+  // 2. Append any additional staff accounts registered in Cloud Firestore
+  cloudUsers.forEach((u) => {
+    const key = (u?.name || '').trim().toUpperCase();
+    if (key && !seenNames.has(key)) {
+      seenNames.add(key);
+      merged.push({
+        ...u,
+        name: key,
+        role: u.role || 'Petugas Opname',
+      });
+    }
+  });
+
+  return merged;
+}
+
 // Subscribe to users in Firestore
 export function subscribeToFirestoreUsers(
   onUpdate: (users: MartUser[]) => void,
@@ -308,11 +358,15 @@ export function subscribeToFirestoreUsers(
     (snapshot) => {
       const users: MartUser[] = [];
       snapshot.forEach((docSnap) => {
-        users.push(docSnap.data() as MartUser);
+        const data = docSnap.data() as MartUser;
+        if (data && data.name) {
+          users.push({
+            ...data,
+            id: data.id || docSnap.id,
+          });
+        }
       });
-      if (users.length > 0) {
-        onUpdate(users);
-      }
+      onUpdate(users);
     },
     (error) => {
       try {
