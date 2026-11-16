@@ -389,66 +389,16 @@ export const MobileOpnameWorkspace: React.FC<MobileOpnameWorkspaceProps> = ({
           </button>
         </form>
 
-        {/* Compact Filter Bar & Add Item CTA */}
-        <div className="grid grid-cols-12 gap-1.5 items-center">
-          <select
-            value={selectedCategory}
-            onChange={(e) => onSelectCategory(e.target.value)}
-            className="col-span-5 px-2 py-1.5 text-[11px] font-medium bg-[#f2f3ff] dark:bg-slate-800 border border-[#c3c6d7]/50 dark:border-slate-700 rounded-lg text-[#131b2e] dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-[#004ac6]"
-          >
-            <option value="ALL">Kategori ({items.length})</option>
-            {availableCategories.map((c) => (
-              <option key={c} value={c}>
-                {c} ({categoryCounts[c] || 0})
-              </option>
-            ))}
-          </select>
-
-          <select
-            value={discrepancyFilter}
-            onChange={(e) => onChangeDiscrepancyFilter(e.target.value as any)}
-            className="col-span-4 px-2 py-1.5 text-[11px] font-medium bg-[#f2f3ff] dark:bg-slate-800 border border-[#c3c6d7]/50 dark:border-slate-700 rounded-lg text-[#131b2e] dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-[#004ac6]"
-          >
-            <option value="ALL">Semua Status</option>
-            {duplicateAnalysis.hasDuplicates && (
-              <option value="DUPLICATE">Ganda ({duplicateAnalysis.totalAffectedItems})</option>
-            )}
-            <option value="MATCH">Cocok ({stats?.matchCount || 0})</option>
-            <option value="MINUS">Minus ({minusCount})</option>
-            <option value="PLUS">Lebih ({plusCount})</option>
-            <option value="UNCOUNTED">Belum ({stats?.uncountedItemsCount || 0})</option>
-          </select>
-
-          <button
-            type="button"
-            onClick={onOpenAddItem}
-            className="col-span-3 py-1.5 px-2 text-[11px] font-bold text-[#003ea8] dark:text-blue-300 bg-[#dbe1ff] dark:bg-blue-950/70 hover:bg-[#c8d3ff] dark:hover:bg-blue-900 rounded-lg flex items-center justify-center gap-1 active:scale-95 transition-transform"
-            title="Tambah Barang Baru"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Barang</span>
-          </button>
-        </div>
-
-        {/* Sort selector + Duplicate Banner */}
-        <div className="flex items-center justify-between gap-2 text-[11px]">
-          <span className="text-[#434655] dark:text-slate-400">Urutkan:</span>
-          <select
-            value={`${sortBy}-${sortOrder}`}
-            onChange={(e) => {
-              const [field, order] = e.target.value.split('-');
-              onChangeSort(field as any, order as any);
-            }}
-            className="flex-1 px-2 py-1 text-[11px] bg-[#f2f3ff] dark:bg-slate-800 border border-[#c3c6d7]/40 dark:border-slate-700 rounded-md text-[#131b2e] dark:text-slate-200"
-          >
-            <option value="totalModal-desc">Total Modal Terbesar</option>
-            <option value="totalModal-asc">Total Modal Terkecil</option>
-            <option value="nama-asc">Nama A-Z</option>
-            <option value="sku-asc">SKU A-Z</option>
-            <option value="qty-desc">Stok Fisik Terbanyak</option>
-            <option value="selisih-asc">Selisih Minus Terbesar</option>
-          </select>
-        </div>
+        {/* Full-Width Primary Add Item CTA */}
+        <button
+          type="button"
+          onClick={onOpenAddItem}
+          className="w-full py-2.5 px-4 text-xs font-bold text-white bg-[#004ac6] hover:bg-[#003ea8] dark:bg-blue-600 dark:hover:bg-blue-700 rounded-lg flex items-center justify-center gap-1.5 shadow-xs active:scale-[0.98] transition-all"
+          title="Tambah Barang Baru"
+        >
+          <Plus className="w-4 h-4" />
+          <span>Tambah Barang</span>
+        </button>
 
         {duplicateAnalysis.hasDuplicates && (
           <div className="p-2.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-300/60 dark:border-amber-800 rounded-lg flex items-center justify-between gap-2">
