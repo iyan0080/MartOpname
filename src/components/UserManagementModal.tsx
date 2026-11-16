@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, UserPlus, Users, Check, ShieldCheck, Cloud } from 'lucide-react';
+import { X, UserPlus, Users, Check, ShieldCheck, Cloud, LogOut } from 'lucide-react';
 import { MartUser } from '../types/inventory.ts';
 
 interface UserManagementModalProps {
@@ -9,6 +9,7 @@ interface UserManagementModalProps {
   activeUser: string;
   onSelectActiveUser: (userName: string) => void;
   onAddUser: (name: string, role: string, color?: string) => Promise<boolean>;
+  onBackToLanding?: () => void;
 }
 
 export const UserManagementModal: React.FC<UserManagementModalProps> = ({
@@ -18,6 +19,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
   activeUser,
   onSelectActiveUser,
   onAddUser,
+  onBackToLanding,
 }) => {
   const [newUserName, setNewUserName] = useState('');
   const [newUserRole, setNewUserRole] = useState('Petugas Opname');
@@ -230,18 +232,33 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-3.5 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
+        <div className="px-6 py-3.5 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2.5">
           <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
             <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
             <span>Petugas aktif saat ini: <strong className="text-slate-900 dark:text-white font-bold">{activeUser}</strong></span>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-1.5 text-xs font-semibold bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 rounded-lg transition-colors"
-          >
-            Tutup
-          </button>
+          <div className="flex items-center gap-2">
+            {onBackToLanding && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onBackToLanding();
+                }}
+                className="px-3 py-1.5 text-xs font-semibold bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-lg inline-flex items-center gap-1.5 transition-colors"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>Keluar ke Pemilihan Akun</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-1.5 text-xs font-semibold bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 rounded-lg transition-colors"
+            >
+              Tutup
+            </button>
+          </div>
         </div>
       </div>
     </div>

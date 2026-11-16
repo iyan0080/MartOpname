@@ -56,6 +56,7 @@ import { MobileBottomDock } from './components/MobileBottomDock.tsx';
 import { MobileMenuSheet } from './components/MobileMenuSheet.tsx';
 import { MobileOpnameWorkspace } from './components/MobileOpnameWorkspace.tsx';
 import { DesktopDashboardWorkspace } from './components/DesktopDashboardWorkspace.tsx';
+import { AccountSelectionLanding } from './components/AccountSelectionLanding.tsx';
 import { useTheme } from './utils/useTheme.ts';
 import { ThemeToggle } from './components/ThemeToggle.tsx';
 
@@ -104,7 +105,10 @@ export default function App() {
   // Theme mode: system (default, follows device settings), light, or dark (can be changed manually)
   const { themeMode, isDark, setThemeMode } = useTheme();
 
-  // Active current user session (persisted in localStorage)
+  // Entry gate: start on Account Selection Landing Page before entering Mobile / PC workspace
+  const [hasEnteredWorkspace, setHasEnteredWorkspace] = useState<boolean>(false);
+
+  // Active current user session (persisted in localStorage as last-used hint)
   const [activeUser, setActiveUser] = useState<string>(() => {
     return localStorage.getItem('mart_active_user') || 'IYAN';
   });
@@ -328,7 +332,13 @@ export default function App() {
       if (iyanToken) {
         setActiveUser('IYAN');
         localStorage.setItem('mart_active_user', 'IYAN');
-        showToast('Beralih ke akun IYAN (Otorisasi Aktif)', 'info');
+        const wasInside = hasEnteredWorkspace;
+        setHasEnteredWorkspace(true);
+        setIsUserModalOpen(false);
+        showToast(
+          wasInside ? 'Beralih ke akun IYAN (Otorisasi Aktif)' : 'Masuk sebagai akun IYAN (Otorisasi Aktif)',
+          'success'
+        );
       } else {
         setPasswordPromptPurpose('switch_to_iyan');
         setIsPasswordPromptOpen(true);
@@ -336,10 +346,19 @@ export default function App() {
       return;
     }
 
+    const wasInside = hasEnteredWorkspace;
     setActiveUser(name);
     localStorage.setItem('mart_active_user', name);
-    showToast(`Beralih ke petugas: ${name}`, 'info');
+    setHasEnteredWorkspace(true);
+    setIsUserModalOpen(false);
+    showToast(wasInside ? `Beralih ke petugas: ${name}` : `Masuk sebagai petugas: ${name}`, 'success');
   };
+
+  // Return to Account Selection Landing Page
+  const handleBackToAccountLanding = useCallback(() => {
+    closeAllActiveModals();
+    setHasEnteredWorkspace(false);
+  }, [closeAllActiveModals]);
 
   // Callback on successful IYAN password verification
   const handleIyanAuthSuccess = (token: string) => {
@@ -347,6 +366,8 @@ export default function App() {
     sessionStorage.setItem('mart_iyan_token', token);
     setActiveUser('IYAN');
     localStorage.setItem('mart_active_user', 'IYAN');
+    setHasEnteredWorkspace(true);
+    setIsUserModalOpen(false);
     setIsPasswordPromptOpen(false);
     showToast('Login IYAN berhasil. Otorisasi Import/Export XLSX aktif.', 'success');
 
@@ -533,6 +554,8 @@ export default function App() {
   // Hardware Barcode Scanner Gun Keypress Listener (USB / Bluetooth HID)
   // Physical barcode scanners type characters in quick bursts (<50ms) followed by 'Enter'
   useEffect(() => {
+    if (!hasEnteredWorkspace) return;
+
     let keyBuffer = '';
     let lastKeyTime = Date.now();
 
@@ -567,7 +590,7 @@ export default function App() {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [activeUser, soundEnabled, items]);
+  }, [activeUser, soundEnabled, items, hasEnteredWorkspace]);
 
   // Process hardware barcode / QR code scanner hit directly against Firebase Cloud Firestore
   const handleHardwareScan = async (code: string) => {
@@ -1020,6 +1043,9 @@ export default function App() {
   const handleAddUser = async (name: string, role: string, color?: string): Promise<boolean> => {
     try {
       const cleanName = name.trim().toUpperCase();
+      if (!cleanName || users.some((u) => u.name.trim().toUpperCase() === cleanName)) {
+        return false;
+      }
       const palette = ['#0284c7', '#059669', '#7c3aed', '#ea580c', '#db2777', '#ca8a04', '#0d9488', '#4f46e5'];
       const assignedColor = color || palette[users.length % palette.length];
       const newUser: MartUser = {
@@ -1449,7 +1475,11 @@ export default function App() {
   const currentUserObj = users.find((u) => u.name === activeUser) || users[0];
 
   return (
-    <div className="min-h-screen md:h-screen md:overflow-hidden bg-[#faf8ff] dark:bg-slate-950 text-[#131b2e] dark:text-slate-100 flex flex-col font-sans transition-colors duration-150">
+    <div
+      className={`${
+        hasEnteredWorkspace ? 'min-h-screen md:h-screen md:overflow-hidden' : 'min-h-screen overflow-y-auto'
+      } bg-[#faf8ff] dark:bg-slate-950 text-[#131b2e] dark:text-slate-100 flex flex-col font-sans transition-colors duration-150`}
+    >
       {/* Real-time floating toast (positioned above mobile bottom dock & non-blocking wrapper) */}
       {liveToast && (
         <div className="fixed bottom-24 md:bottom-5 right-3 sm:right-5 left-3 sm:left-auto z-50 flex justify-end pointer-events-none">
@@ -1484,7 +1514,23 @@ export default function App() {
         </div>
       )}
 
-      {isDesktopViewport ? (
+      {!hasEnteredWorkspace ? (
+        <AccountSelectionLanding
+          users={users}
+          lastSelectedUser={activeUser}
+          iyanUnlocked={Boolean(iyanToken)}
+          session={session}
+          totalItemsCount={items.length}
+          countedItemsCount={stats?.countedItemsCount || 0}
+          isLoadingData={isLoading}
+          isCloudConnected={isCloudConnected}
+          themeMode={themeMode}
+          isDark={isDark}
+          onThemeChange={setThemeMode}
+          onSelectAccount={handleSelectActiveUser}
+          onAddUser={handleAddUser}
+        />
+      ) : isDesktopViewport ? (
         /* PC & TABLET (>=768px): Material-3 Web Dashboard Shell (Collapsible Sidebar + Fit-to-Screen Main Viewport) */
         <DesktopDashboardWorkspace
           items={items}
@@ -1932,6 +1978,7 @@ export default function App() {
         activeUser={activeUser}
         onSelectActiveUser={handleSelectActiveUser}
         onAddUser={handleAddUser}
+        onBackToLanding={handleBackToAccountLanding}
       />
 
       {/* 4. XLSX Import / Export Modal */}
@@ -2244,7 +2291,7 @@ export default function App() {
       )}
 
       {/* 13. Mobile Bottom Dock Navigation (Thumb-friendly Bar at bottom of screen) */}
-      {!isDesktopViewport && (
+      {hasEnteredWorkspace && !isDesktopViewport && (
         <MobileBottomDock
           activeTab={activeViewTab}
           onSelectTab={handleSelectViewTab}
@@ -2259,7 +2306,7 @@ export default function App() {
       )}
 
       {/* 14. Mobile Full Actions Menu Bottom Sheet */}
-      {!isDesktopViewport && (
+      {hasEnteredWorkspace && !isDesktopViewport && (
         <MobileMenuSheet
           isOpen={isMobileMenuOpen}
           onClose={() => setIsMobileMenuOpen(false)}
