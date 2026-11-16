@@ -141,6 +141,10 @@ export async function fetchLogsFromFirestore(): Promise<ScanAuditLog[]> {
 export async function saveItemToFirestore(item: InventoryItem): Promise<void> {
   const path = `items/${item.id}`;
   try {
+    const validIsiPerDus =
+      item.isiPerDus !== undefined && item.isiPerDus !== null && Number(item.isiPerDus) > 0
+        ? Math.max(1, Math.round(Number(item.isiPerDus)))
+        : undefined;
     const sanitized = sanitizeForFirestore({
       ...item,
       sku: (item.sku || '').trim().toUpperCase(),
@@ -148,6 +152,7 @@ export async function saveItemToFirestore(item: InventoryItem): Promise<void> {
       barcode: (item.barcode || '').trim(),
       kategori: (item.kategori || 'Umum').trim(),
       satuan: (item.satuan || 'pcs').trim(),
+      isiPerDus: validIsiPerDus,
       quantity: Math.max(0, Number(item.quantity) || 0),
       quantitySystem: Math.max(0, Number(item.quantitySystem) || 0),
       stokAwal: Math.max(0, Number(item.stokAwal !== undefined ? item.stokAwal : item.quantitySystem) || 0),
@@ -196,6 +201,10 @@ export async function batchSaveItemsToFirestore(items: InventoryItem[]): Promise
       const batch = writeBatch(db);
       chunk.forEach((item) => {
         const itemRef = doc(db, 'items', item.id);
+        const validIsiPerDus =
+          item.isiPerDus !== undefined && item.isiPerDus !== null && Number(item.isiPerDus) > 0
+            ? Math.max(1, Math.round(Number(item.isiPerDus)))
+            : undefined;
         const sanitized = sanitizeForFirestore({
           ...item,
           sku: (item.sku || '').trim().toUpperCase(),
@@ -203,6 +212,7 @@ export async function batchSaveItemsToFirestore(items: InventoryItem[]): Promise
           barcode: (item.barcode || '').trim(),
           kategori: (item.kategori || 'Umum').trim(),
           satuan: (item.satuan || 'pcs').trim(),
+          isiPerDus: validIsiPerDus,
           quantity: Math.max(0, Number(item.quantity) || 0),
           quantitySystem: Math.max(0, Number(item.quantitySystem) || 0),
           stokAwal: Math.max(0, Number(item.stokAwal !== undefined ? item.stokAwal : item.quantitySystem) || 0),

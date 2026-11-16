@@ -21,7 +21,10 @@ export const MobileBottomDock: React.FC<MobileBottomDockProps> = ({
   const isPrivilegedUser = activeUser === 'IYAN' || activeUser === 'HENDRI';
 
   return (
-    <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#faf8ff]/95 dark:bg-slate-900/95 backdrop-blur-xl border-t border-[#c3c6d7]/50 dark:border-slate-800 px-2 pt-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] shadow-[0_-2px_12px_rgba(19,27,46,0.06)] transition-colors">
+    <nav
+      aria-label="Navigasi Utama Mobile"
+      className="shrink-0 relative z-40 w-full bg-[#faf8ff]/95 dark:bg-slate-900/95 backdrop-blur-xl border-t border-[#c3c6d7]/50 dark:border-slate-800 px-2 pt-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] shadow-[0_-2px_12px_rgba(19,27,46,0.06)] transition-colors overflow-visible"
+    >
       <div className="flex items-center justify-around relative select-none">
         {/* Tab 1: Stok Opname */}
         <button
@@ -91,6 +94,6 @@ export const MobileBottomDock: React.FC<MobileBottomDockProps> = ({
           )}
         </button>
       </div>
-    </div>
+    </nav>
   );
 };

@@ -7,6 +7,7 @@ export interface InventoryItem {
   barcode: string;
   kategori: string;
   satuan?: string; // satuan (pcs/box)
+  isiPerDus?: number; // Jumlah isi satuan (pcs) per dus/box tersimpan
   hargaModal: number; // harga_modal (Rp)
   hargaJual?: number; // harga_jual (Rp)
   quantity: number; // Stok Fisik hasil opname

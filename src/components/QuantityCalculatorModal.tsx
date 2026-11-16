@@ -14,8 +14,8 @@ interface QuantityCalculatorModalProps {
   onClose: () => void;
   targetItem?: InventoryItem | null;
   items?: InventoryItem[];
-  onApplyQuantity: (itemId: string, quantity: number, notes?: string) => Promise<boolean>;
-  onSelectResult?: (quantity: number) => void;
+  onApplyQuantity: (itemId: string, quantity: number, notes?: string, isiPerDus?: number) => Promise<boolean>;
+  onSelectResult?: (quantity: number, isiPerDus?: number) => void;
 }
 
 export const QuantityCalculatorModal: React.FC<QuantityCalculatorModalProps> = ({
@@ -37,6 +37,7 @@ export const QuantityCalculatorModal: React.FC<QuantityCalculatorModalProps> = (
   // Controlled box multiplier state (Pengisian Isi Per Dus)
   const [boxCount, setBoxCount] = useState<number | ''>(1);
   const [itemsPerBox, setItemsPerBox] = useState<number | ''>('');
+  const [savedIsiPerDus, setSavedIsiPerDus] = useState<number | undefined>(undefined);
 
   // Grid / Shelf counter state (baris x kedalaman/tumpukan + sisa)
   const [gridFacing, setGridFacing] = useState<number | ''>(4);
@@ -54,13 +55,22 @@ export const QuantityCalculatorModal: React.FC<QuantityCalculatorModalProps> = (
       setSelectedItemId(targetItem.id);
       setDisplayExp(String(targetItem.quantity || '0'));
       setCalcResult(targetItem.quantity || 0);
+      if (targetItem.isiPerDus && targetItem.isiPerDus > 0) {
+        const cleanIsi = Math.max(1, Math.round(targetItem.isiPerDus));
+        setItemsPerBox(cleanIsi);
+        setSavedIsiPerDus(cleanIsi);
+      } else {
+        setItemsPerBox('');
+        setSavedIsiPerDus(undefined);
+      }
     } else {
       setSelectedItemId('');
       setDisplayExp('0');
       setCalcResult(0);
+      setItemsPerBox('');
+      setSavedIsiPerDus(undefined);
     }
     setBoxCount(1);
-    setItemsPerBox('');
     setCalcMode('standard');
     setSelectionError(null);
   }, [targetItem, isOpen]);
@@ -157,9 +167,11 @@ export const QuantityCalculatorModal: React.FC<QuantityCalculatorModalProps> = (
     const d = typeof boxCount === 'number' ? boxCount : 0;
     const isi = typeof itemsPerBox === 'number' ? itemsPerBox : 0;
     if (d > 0 && isi > 0) {
-      addPackMultiplier(`${d} Dus × ${isi} pcs`, d * isi);
+      const cleanIsi = Math.max(1, Math.round(isi));
+      addPackMultiplier(`${d} Dus × ${cleanIsi} pcs`, d * cleanIsi);
+      setSavedIsiPerDus(cleanIsi);
       setBoxCount(1);
-      setItemsPerBox('');
+      setItemsPerBox(cleanIsi);
     }
   };
 
@@ -169,8 +181,13 @@ export const QuantityCalculatorModal: React.FC<QuantityCalculatorModalProps> = (
       : 0;
 
   const handleApply = async () => {
+    const resolvedIsi =
+      typeof itemsPerBox === 'number' && itemsPerBox > 0
+        ? Math.max(1, Math.round(itemsPerBox))
+        : savedIsiPerDus;
+
     if (onSelectResult) {
-      onSelectResult(calcResult);
+      onSelectResult(calcResult, resolvedIsi);
       onClose();
       return;
     }
@@ -186,7 +203,8 @@ export const QuantityCalculatorModal: React.FC<QuantityCalculatorModalProps> = (
     const success = await onApplyQuantity(
       currentTargetId,
       calcResult,
-      `Dihitung via kalkulator: ${displayExp} = ${calcResult} pcs`
+      `Dihitung via kalkulator: ${displayExp} = ${calcResult} pcs`,
+      resolvedIsi
     );
     setIsApplying(false);
 
@@ -247,12 +265,22 @@ export const QuantityCalculatorModal: React.FC<QuantityCalculatorModalProps> = (
                       setSelectedItemId(item.id);
                       setDisplayExp(String(item.quantity || '0'));
                       setCalcResult(item.quantity || 0);
+                      if (item.isiPerDus && item.isiPerDus > 0) {
+                        const cleanIsi = Math.max(1, Math.round(item.isiPerDus));
+                        setItemsPerBox(cleanIsi);
+                        setSavedIsiPerDus(cleanIsi);
+                      } else {
+                        setItemsPerBox('');
+                        setSavedIsiPerDus(undefined);
+                      }
                       setItemSearch('');
                     }}
                     className="w-full px-2.5 py-1.5 text-left text-xs hover:bg-slate-50 dark:hover:bg-slate-700/60 flex items-center justify-between"
                   >
                     <span className="font-medium text-slate-800 dark:text-slate-200 truncate">{item.namaBarang}</span>
-                    <span className="font-mono text-[11px] text-slate-500 dark:text-slate-400 shrink-0 ml-2">{item.sku}</span>
+                    <span className="font-mono text-[11px] text-slate-500 dark:text-slate-400 shrink-0 ml-2">
+                      {item.sku}{item.isiPerDus ? ` · ${item.isiPerDus}/dus` : ''}
+                    </span>
                   </button>
                 ))}
               </div>
@@ -316,16 +344,23 @@ export const QuantityCalculatorModal: React.FC<QuantityCalculatorModalProps> = (
                 onSubmit={handleAddBoxInput}
                 className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2.5"
               >
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2">
                   <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
                     <Package className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
                     Pengisian Isi Per Dus
                   </span>
-                  {boxSubtotal > 0 && (
-                    <span className="text-xs font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                      = {boxSubtotal} pcs
-                    </span>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {selectedItemObj?.isiPerDus && selectedItemObj.isiPerDus > 0 && (
+                      <span className="text-[10px] font-mono font-semibold text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-950/70 px-1.5 py-0.5 rounded">
+                        Tersimpan: {selectedItemObj.isiPerDus}/dus
+                      </span>
+                    )}
+                    {boxSubtotal > 0 && (
+                      <span className="text-xs font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                        = {boxSubtotal} pcs
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-12 gap-2 items-end">
@@ -352,9 +387,13 @@ export const QuantityCalculatorModal: React.FC<QuantityCalculatorModalProps> = (
                       type="number"
                       min="1"
                       value={itemsPerBox}
-                      onChange={(e) =>
-                        setItemsPerBox(e.target.value === '' ? '' : Math.max(0, parseInt(e.target.value, 10) || 0))
-                      }
+                      onChange={(e) => {
+                        const val = e.target.value === '' ? '' : Math.max(1, parseInt(e.target.value, 10) || 1);
+                        setItemsPerBox(val);
+                        if (typeof val === 'number' && val > 0) {
+                          setSavedIsiPerDus(val);
+                        }
+                      }}
                       placeholder="Misal: 24"
                       className="w-full px-2.5 py-1.5 text-xs border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-mono font-bold text-center focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
                     />

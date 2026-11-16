@@ -60,7 +60,8 @@ interface MobileOpnameWorkspaceProps {
   onOpenImportExport: () => void;
   onOpenDuplicateModal: () => void;
   onSelectTab: (tab: 'opname' | 'laporan' | 'kategori') => void;
-  onSaveCountingAdjust: (itemId: string, newQuantity: number, notes?: string) => Promise<boolean>;
+  onSaveCountingAdjust: (itemId: string, newQuantity: number, notes?: string, isiPerDus?: number) => Promise<boolean>;
+  onSaveIsiPerDus?: (itemId: string, isiPerDus: number) => void;
   onQuickDelta: (itemId: string, delta: number) => void;
   onQuickAdjust: (item: InventoryItem) => void;
   onOpenCalc: (item: InventoryItem) => void;
@@ -72,6 +73,9 @@ interface MobileOpnameWorkspaceProps {
 
 function getDefaultIsiPerBox(item: InventoryItem | null): number {
   if (!item) return 24;
+  if (item.isiPerDus !== undefined && item.isiPerDus > 0) {
+    return Math.max(1, Math.round(item.isiPerDus));
+  }
   const nameLower = (item.namaBarang || '').toLowerCase();
   if (nameLower.includes('mie') || nameLower.includes('indomie') || nameLower.includes('sedap')) {
     return 40;
@@ -114,6 +118,7 @@ export const MobileOpnameWorkspace: React.FC<MobileOpnameWorkspaceProps> = ({
   onOpenDuplicateModal,
   onSelectTab,
   onSaveCountingAdjust,
+  onSaveIsiPerDus,
   onQuickDelta,
   onQuickAdjust,
   onOpenCalc,
@@ -123,6 +128,7 @@ export const MobileOpnameWorkspace: React.FC<MobileOpnameWorkspaceProps> = ({
   onSelectCountingItem,
 }) => {
   const countingCardRef = useRef<HTMLElement | null>(null);
+  const prevActiveItemIdRef = useRef<string | null>(null);
 
   // Pick active counting item (explicitly selected -> first triage item -> first filtered item -> first item)
   const activeItem = useMemo(() => {
@@ -152,22 +158,32 @@ export const MobileOpnameWorkspace: React.FC<MobileOpnameWorkspaceProps> = ({
 
   // Active counting calculator state (Jml Box, Isi/Box, Ecer Lepas — NO preset chips)
   const [jmlBox, setJmlBox] = useState<number>(0);
-  const [isiPerBox, setIsiPerBox] = useState<number>(24);
+  const [isiPerBox, setIsiPerBox] = useState<number | ''>(24);
   const [ecerLepas, setEcerLepas] = useState<number>(0);
   const [isSavingActive, setIsSavingActive] = useState(false);
 
-  // Sync box/ecer inputs when activeItem changes
+  // Sync box/ecer inputs when activeItem changes or saved isiPerDus updates from Cloud
   useEffect(() => {
+    const nextId = activeItem?.id ?? null;
+    const idChanged = prevActiveItemIdRef.current !== nextId;
+    prevActiveItemIdRef.current = nextId;
+
     if (activeItem) {
-      setJmlBox(0);
-      setIsiPerBox(getDefaultIsiPerBox(activeItem));
-      setEcerLepas(Math.max(0, activeItem.quantity || 0));
+      if (idChanged) {
+        setJmlBox(0);
+        setIsiPerBox(getDefaultIsiPerBox(activeItem));
+        setEcerLepas(Math.max(0, activeItem.quantity || 0));
+      } else if (activeItem.isiPerDus && activeItem.isiPerDus > 0) {
+        setIsiPerBox((prev) =>
+          prev === '' ? prev : Math.max(1, Math.round(activeItem.isiPerDus!))
+        );
+      }
     } else {
       setJmlBox(0);
       setIsiPerBox(24);
       setEcerLepas(0);
     }
-  }, [activeItem?.id]);
+  }, [activeItem?.id, activeItem?.isiPerDus]);
 
   // Keep loose eceran synced if user tapped +1 / -1 directly on a mobile card
   useEffect(() => {
@@ -187,7 +203,10 @@ export const MobileOpnameWorkspace: React.FC<MobileOpnameWorkspaceProps> = ({
 
   // Live formula calculation
   const safeBox = Math.max(0, jmlBox);
-  const safeIsi = Math.max(1, isiPerBox);
+  const safeIsi =
+    typeof isiPerBox === 'number' && isiPerBox >= 1
+      ? Math.round(isiPerBox)
+      : getDefaultIsiPerBox(activeItem);
   const safeEcer = Math.max(0, ecerLepas);
   const totalCalculated = safeBox * safeIsi + safeEcer;
   const activeSystemQty = activeItem?.quantitySystem || 0;
@@ -204,6 +223,14 @@ export const MobileOpnameWorkspace: React.FC<MobileOpnameWorkspaceProps> = ({
     }
   };
 
+  const handleIsiPerBoxChange = (nextVal: number) => {
+    const safeVal = Math.max(1, Math.round(nextVal || 1));
+    setIsiPerBox(safeVal);
+    if (activeItem && onSaveIsiPerDus) {
+      onSaveIsiPerDus(activeItem.id, safeVal);
+    }
+  };
+
   const handleSaveAndNext = async () => {
     if (!activeItem || isSavingActive) return;
     setIsSavingActive(true);
@@ -212,7 +239,7 @@ export const MobileOpnameWorkspace: React.FC<MobileOpnameWorkspaceProps> = ({
         ? `Hitung Box & Eceran: (${safeBox} × ${safeIsi}) + ${safeEcer} = ${totalCalculated} ${activeSatuan}`
         : `Hitung Fisik Mobile: ${totalCalculated} ${activeSatuan}`;
 
-    const ok = await onSaveCountingAdjust(activeItem.id, totalCalculated, note);
+    const ok = await onSaveCountingAdjust(activeItem.id, totalCalculated, note, safeIsi);
     setIsSavingActive(false);
 
     if (ok) {
@@ -650,12 +677,14 @@ export const MobileOpnameWorkspace: React.FC<MobileOpnameWorkspaceProps> = ({
                   <span className="text-[11px] font-bold text-[#434655] dark:text-slate-200 block">
                     Isi/Box
                   </span>
-                  <span className="text-[10px] text-[#737686] dark:text-slate-400 block">Pcs/Dus</span>
+                  <span className="text-[10px] text-[#737686] dark:text-slate-400 block">
+                    {activeItem.isiPerDus && activeItem.isiPerDus > 0 ? 'Pcs/Dus ✓' : 'Pcs/Dus'}
+                  </span>
                 </div>
                 <div className="flex items-center justify-between gap-1 bg-white dark:bg-slate-900 rounded-md p-1 shadow-xs">
                   <button
                     type="button"
-                    onClick={() => setIsiPerBox((v) => Math.max(1, v - 1))}
+                    onClick={() => handleIsiPerBoxChange(Math.max(1, safeIsi - 1))}
                     className="w-7 h-9 rounded bg-[#eaedff] dark:bg-slate-800 hover:bg-[#dae2fd] dark:hover:bg-slate-700 flex items-center justify-center text-[#131b2e] dark:text-white active:scale-90 transition-transform shrink-0"
                     aria-label="Kurangi isi per box"
                   >
@@ -665,12 +694,27 @@ export const MobileOpnameWorkspace: React.FC<MobileOpnameWorkspaceProps> = ({
                     type="number"
                     min="1"
                     value={isiPerBox}
-                    onChange={(e) => setIsiPerBox(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      if (raw === '') {
+                        setIsiPerBox('');
+                        return;
+                      }
+                      const parsed = parseInt(raw, 10);
+                      if (!isNaN(parsed)) {
+                        handleIsiPerBoxChange(Math.max(1, parsed));
+                      }
+                    }}
+                    onBlur={() => {
+                      if (isiPerBox === '' || isiPerBox < 1) {
+                        setIsiPerBox(getDefaultIsiPerBox(activeItem));
+                      }
+                    }}
                     className="w-full min-w-0 text-center bg-transparent font-mono font-extrabold text-sm text-[#131b2e] dark:text-white focus:outline-none tabular-nums"
                   />
                   <button
                     type="button"
-                    onClick={() => setIsiPerBox((v) => v + 1)}
+                    onClick={() => handleIsiPerBoxChange(safeIsi + 1)}
                     className="w-7 h-9 rounded bg-[#eaedff] dark:bg-slate-800 hover:bg-[#dae2fd] dark:hover:bg-slate-700 flex items-center justify-center text-[#004ac6] dark:text-blue-400 active:scale-90 transition-transform shrink-0"
                     aria-label="Tambah isi per box"
                   >

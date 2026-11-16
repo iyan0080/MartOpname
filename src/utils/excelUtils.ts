@@ -95,6 +95,7 @@ export function exportInventoryToXLSX(items: InventoryItem[], stats?: InventoryS
     'Nama Produk',
     'Kategori',
     'Satuan',
+    'Isi / Dus',
     'Stok Fisik (Opname)',
     'Stok Sistem (Awal)',
     'Selisih (Fisik - Sistem)',
@@ -124,6 +125,7 @@ export function exportInventoryToXLSX(items: InventoryItem[], stats?: InventoryS
       item.namaBarang,
       item.kategori || 'Umum',
       item.satuan || 'pcs',
+      item.isiPerDus && item.isiPerDus > 0 ? item.isiPerDus : '-',
       qty,
       sysQty,
       diff,
@@ -153,6 +155,7 @@ export function exportInventoryToXLSX(items: InventoryItem[], stats?: InventoryS
     `Total: ${items.length} Barang`,
     '',
     '',
+    '',
     totalQty,
     totalSys,
     totalQty - totalSys,
@@ -173,6 +176,7 @@ export function exportInventoryToXLSX(items: InventoryItem[], stats?: InventoryS
     { wch: 18 },
     { wch: 34 },
     { wch: 18 },
+    { wch: 10 },
     { wch: 10 },
     { wch: 14 },
     { wch: 14 },
@@ -568,6 +572,18 @@ export async function parseExcelFile(
           // 11. catatan
           const catatan = normalized['CATATAN'] || normalized['KETERANGAN'] || normalized['NOTES'] || '';
 
+          // Optional: isi per dus
+          const rawIsiPerDus = parseExcelNumber(
+            normalized['ISIPERDUS'] ??
+              normalized['ISIDUS'] ??
+              normalized['ISIPERBOX'] ??
+              normalized['ISIBOX'] ??
+              normalized['PCSDUS'] ??
+              normalized['PCSPERDUS'] ??
+              normalized['PCSBOX'],
+            0
+          );
+
           if (!sku && !nama && !barcode) {
             // Empty row, skip
             return;
@@ -583,6 +599,7 @@ export async function parseExcelFile(
             barcode: String(barcode).trim(),
             kategori: String(kategori).trim() || 'Umum',
             satuan,
+            ...(rawIsiPerDus > 0 ? { isiPerDus: Math.max(1, Math.round(rawIsiPerDus)) } : {}),
             hargaModal: Math.max(0, isNaN(modal) ? 0 : modal),
             hargaJual: Math.max(0, isNaN(jual) ? 0 : jual),
             stokAwal: Math.max(0, isNaN(stokAwal) ? 0 : stokAwal),

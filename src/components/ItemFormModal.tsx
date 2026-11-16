@@ -32,6 +32,7 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
   const [isCustomCategory, setIsCustomCategory] = useState(false);
   const [customCategoryName, setCustomCategoryName] = useState('');
   const [satuan, setSatuan] = useState('pcs');
+  const [isiPerDus, setIsiPerDus] = useState<number | ''>('');
   const [quantity, setQuantity] = useState<number | ''>(0);
   const [quantitySystem, setQuantitySystem] = useState<number | ''>(0);
   const [hargaModal, setHargaModal] = useState<number | ''>(0);
@@ -88,6 +89,7 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
       setIsCustomCategory(false);
       setCustomCategoryName('');
       setSatuan(initialData.satuan || 'pcs');
+      setIsiPerDus(initialData.isiPerDus && initialData.isiPerDus > 0 ? initialData.isiPerDus : '');
       setQuantity(initialData.quantity !== undefined ? initialData.quantity : 0);
       setQuantitySystem(initialData.quantitySystem !== undefined ? initialData.quantitySystem : 0);
       setHargaModal(initialData.hargaModal !== undefined ? initialData.hargaModal : 0);
@@ -104,6 +106,7 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
       setIsCustomCategory(false);
       setCustomCategoryName('');
       setSatuan('pcs');
+      setIsiPerDus('');
       setQuantity(1);
       setQuantitySystem(1);
       setHargaModal(0);
@@ -143,6 +146,11 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
     setIsSubmitting(true);
     setError(null);
 
+    const validIsiPerDus =
+      typeof isiPerDus === 'number' && isiPerDus > 0
+        ? Math.max(1, Math.round(isiPerDus))
+        : undefined;
+
     const success = await onSave({
       id: initialData?.id,
       sku: sku.trim().toUpperCase(),
@@ -150,6 +158,7 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
       barcode: barcode.trim(),
       kategori: finalCategory,
       satuan: satuan.trim() || 'pcs',
+      ...(validIsiPerDus !== undefined ? { isiPerDus: validIsiPerDus } : {}),
       quantity: Math.max(0, numQty),
       quantitySystem: Math.max(0, numSysQty),
       stokAwal: Math.max(0, numSysQty),
@@ -457,11 +466,28 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
               </div>
             </div>
 
-            {/* Stok Minimum & Status Produk */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Isi Per Dus, Stok Minimum & Status Produk */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Stok Minimum Peringatan (stok_minumum)
+                  Isi Per Dus ({satuan}/dus)
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  value={isiPerDus}
+                  onChange={(e) =>
+                    setIsiPerDus(e.target.value === '' ? '' : Math.max(1, parseInt(e.target.value, 10) || 1))
+                  }
+                  placeholder="Contoh: 24"
+                  className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-500 font-mono font-semibold"
+                />
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">Otomatis dipakai kalkulator dus</p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Stok Minimum (Restock)
                 </label>
                 <input
                   type="number"
@@ -471,7 +497,7 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
                   placeholder="5"
                   className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-500 font-mono"
                 />
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">Batas peringatan restock barang saat stok menipis</p>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">Batas peringatan stok menipis</p>
               </div>
 
               <div>
@@ -484,7 +510,7 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
                   className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-500 font-semibold"
                 >
                   <option value="AKTIF">AKTIF (Dijual di Mart)</option>
-                  <option value="NONAKTIF">NONAKTIF (Sementara Habis/Ditutup)</option>
+                  <option value="NONAKTIF">NONAKTIF (Sementara Habis)</option>
                   <option value="ARSIP">ARSIP (Tidak Dijual Lagi)</option>
                 </select>
               </div>
@@ -540,26 +566,38 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
         isOpen={isCalcOpen}
         onClose={() => setIsCalcOpen(false)}
         targetItem={
-          initialData || {
-            id: 'draft',
-            sku: sku || 'BARU',
-            namaBarang: namaBarang || 'Barang Baru',
-            barcode,
-            kategori,
-            quantity: numQty,
-            quantitySystem: numSysQty,
-            hargaModal: numModal,
-            keterangan,
-            lastUpdatedBy: activeUser,
-            updatedAt: '',
-          }
+          initialData
+            ? {
+                ...initialData,
+                ...(typeof isiPerDus === 'number' && isiPerDus > 0 ? { isiPerDus } : {}),
+              }
+            : {
+                id: 'draft',
+                sku: sku || 'BARU',
+                namaBarang: namaBarang || 'Barang Baru',
+                barcode,
+                kategori,
+                ...(typeof isiPerDus === 'number' && isiPerDus > 0 ? { isiPerDus } : {}),
+                quantity: numQty,
+                quantitySystem: numSysQty,
+                hargaModal: numModal,
+                keterangan,
+                lastUpdatedBy: activeUser,
+                updatedAt: '',
+              }
         }
-        onSelectResult={(res) => {
+        onSelectResult={(res, resIsi) => {
           setQuantity(res);
+          if (resIsi && resIsi > 0) {
+            setIsiPerDus(resIsi);
+          }
           setIsCalcOpen(false);
         }}
-        onApplyQuantity={async (_id, resQty) => {
+        onApplyQuantity={async (_id, resQty, _notes, resIsi) => {
           setQuantity(resQty);
+          if (resIsi && resIsi > 0) {
+            setIsiPerDus(resIsi);
+          }
           setIsCalcOpen(false);
           return true;
         }}

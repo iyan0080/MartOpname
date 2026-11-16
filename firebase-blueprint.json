@@ -10,6 +10,7 @@
         "namaBarang": { "type": "string", "description": "Nama lengkap produk" },
         "barcode": { "type": "string", "description": "Kode batang barcode EAN/UPC" },
         "kategori": { "type": "string", "description": "Kategori produk mart" },
+        "isiPerDus": { "type": "number", "description": "Jumlah isi satuan (pcs) per dus/karton tersimpan" },
         "quantity": { "type": "number", "description": "Jumlah fisik hasil audit opname" },
         "quantitySystem": { "type": "number", "description": "Jumlah stok sistem toko" },
         "hargaModal": { "type": "number", "description": "Harga modal pokok barang dalam Rupiah" },

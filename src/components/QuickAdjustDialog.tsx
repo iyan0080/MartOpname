@@ -12,7 +12,8 @@ interface QuickAdjustDialogProps {
   onSaveAdjust: (
     itemId: string,
     newQuantity: number,
-    notes?: string
+    notes?: string,
+    isiPerDus?: number
   ) => Promise<boolean>;
 }
 
@@ -25,6 +26,7 @@ export const QuickAdjustDialog: React.FC<QuickAdjustDialogProps> = ({
 }) => {
   const [qty, setQty] = useState<number>(0);
   const [notes, setNotes] = useState('');
+  const [isiPerDus, setIsiPerDus] = useState<number | undefined>(undefined);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCalcModalOpen, setIsCalcModalOpen] = useState(false);
 
@@ -32,6 +34,7 @@ export const QuickAdjustDialog: React.FC<QuickAdjustDialogProps> = ({
     if (item) {
       setQty(item.quantity);
       setNotes(item.keterangan || '');
+      setIsiPerDus(item.isiPerDus && item.isiPerDus > 0 ? item.isiPerDus : undefined);
     }
   }, [item, isOpen]);
 
@@ -45,7 +48,7 @@ export const QuickAdjustDialog: React.FC<QuickAdjustDialogProps> = ({
 
   const handleApply = async () => {
     setIsSubmitting(true);
-    const success = await onSaveAdjust(item.id, qty, notes);
+    const success = await onSaveAdjust(item.id, qty, notes, isiPerDus);
     setIsSubmitting(false);
     if (success) {
       onClose();
@@ -234,11 +237,17 @@ export const QuickAdjustDialog: React.FC<QuickAdjustDialogProps> = ({
       <QuantityCalculatorModal
         isOpen={isCalcModalOpen}
         onClose={() => setIsCalcModalOpen(false)}
-        targetItem={item}
-        onApplyQuantity={async (_id, calculatedQty, calcNotes) => {
+        targetItem={{
+          ...item,
+          ...(isiPerDus && isiPerDus > 0 ? { isiPerDus } : {}),
+        }}
+        onApplyQuantity={async (_id, calculatedQty, calcNotes, calcIsiPerDus) => {
           setQty(calculatedQty);
           if (calcNotes) {
             setNotes(calcNotes);
+          }
+          if (calcIsiPerDus && calcIsiPerDus > 0) {
+            setIsiPerDus(calcIsiPerDus);
           }
           setIsCalcModalOpen(false);
           return true;

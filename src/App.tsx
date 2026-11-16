@@ -64,6 +64,8 @@ import { ThemeToggle } from './components/ThemeToggle.tsx';
 export default function App() {
   // State
   const [items, setItems] = useState<InventoryItem[]>([]);
+  const itemsRef = useRef<InventoryItem[]>(items);
+  itemsRef.current = items;
   const [users, setUsers] = useState<MartUser[]>(INITIAL_USERS);
   const [logs, setLogs] = useState<ScanAuditLog[]>([]);
   const [activeUsersCount, setActiveUsersCount] = useState<number>(1);
@@ -914,6 +916,11 @@ export default function App() {
         const existing = items.find((i) => i.id === itemData.id);
         const prevQty = existing?.quantity || 0;
         const newQty = itemData.quantity !== undefined ? Number(itemData.quantity) : prevQty;
+        const resolvedIsiPerDus =
+          itemData.isiPerDus !== undefined && Number(itemData.isiPerDus) > 0
+            ? Math.max(1, Math.round(Number(itemData.isiPerDus)))
+            : existing?.isiPerDus;
+
         const updatedItem: InventoryItem = {
           id: itemData.id,
           sku: (itemData.sku || existing?.sku || '').trim().toUpperCase(),
@@ -921,6 +928,7 @@ export default function App() {
           barcode: (itemData.barcode !== undefined ? itemData.barcode : existing?.barcode || '').trim(),
           kategori: itemData.kategori || existing?.kategori || 'Umum',
           satuan: itemData.satuan || existing?.satuan || 'pcs',
+          ...(resolvedIsiPerDus !== undefined ? { isiPerDus: resolvedIsiPerDus } : {}),
           quantity: newQty,
           quantitySystem: itemData.quantitySystem !== undefined ? Number(itemData.quantitySystem) : (existing?.quantitySystem || 0),
           stokAwal: itemData.stokAwal !== undefined ? Number(itemData.stokAwal) : (existing?.stokAwal ?? existing?.quantitySystem ?? 0),
@@ -959,6 +967,10 @@ export default function App() {
         return true;
       } else {
         const cleanSku = (itemData.sku || `SKU-${Date.now().toString().slice(-4)}`).trim().toUpperCase();
+        const validNewIsiPerDus =
+          itemData.isiPerDus !== undefined && Number(itemData.isiPerDus) > 0
+            ? Math.max(1, Math.round(Number(itemData.isiPerDus)))
+            : undefined;
         const newItem: InventoryItem = {
           id: `item-${Date.now()}`,
           sku: cleanSku,
@@ -966,6 +978,7 @@ export default function App() {
           barcode: (itemData.barcode || '').trim(),
           kategori: itemData.kategori || 'Umum',
           satuan: itemData.satuan || 'pcs',
+          ...(validNewIsiPerDus !== undefined ? { isiPerDus: validNewIsiPerDus } : {}),
           quantity: Math.max(0, Number(itemData.quantity) || 0),
           quantitySystem: Math.max(0, Number(itemData.quantitySystem) || 0),
           stokAwal: itemData.stokAwal !== undefined ? Math.max(0, Number(itemData.stokAwal)) : Math.max(0, Number(itemData.quantitySystem) || 0),
@@ -1050,15 +1063,82 @@ export default function App() {
     }
   };
 
+  // Debounced auto-save for Isi/Box (Quantity per dus) edits directly to Cloud Firestore
+  const pendingIsiMapRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+
+  const handleSaveItemIsiPerDus = useCallback(
+    (itemId: string, isiPerDus: number) => {
+      const safeIsi = Math.max(1, Math.round(Number(isiPerDus) || 1));
+      const existingTimer = pendingIsiMapRef.current.get(itemId);
+      if (existingTimer) {
+        clearTimeout(existingTimer);
+      }
+
+      const currentTarget = itemsRef.current.find((i) => i.id === itemId);
+      if (!currentTarget || (!existingTimer && currentTarget.isiPerDus === safeIsi)) return;
+
+      const now = new Date().toISOString();
+      setItems((prev) =>
+        prev.map((i) =>
+          i.id === itemId
+            ? {
+                ...i,
+                isiPerDus: safeIsi,
+                updatedAt: now,
+              }
+            : i
+        )
+      );
+
+      const timer = setTimeout(async () => {
+        pendingIsiMapRef.current.delete(itemId);
+        const latestItem = itemsRef.current.find((i) => i.id === itemId);
+        if (!latestItem) return;
+        try {
+          markCloudSaving();
+          await saveItemToFirestore({
+            ...latestItem,
+            isiPerDus: safeIsi,
+            updatedAt: new Date().toISOString(),
+          });
+          markCloudSynced();
+        } catch (err) {
+          console.error('Error saving isiPerDus:', err);
+          setCloudSyncStatus('error');
+        }
+      }, 420);
+
+      pendingIsiMapRef.current.set(itemId, timer);
+    },
+    [markCloudSaving, markCloudSynced]
+  );
+
   // Save Quick Adjust dialog directly to Firebase Cloud
-  const handleSaveQuickAdjust = async (itemId: string, newQuantity: number, notes?: string): Promise<boolean> => {
+  const handleSaveQuickAdjust = async (
+    itemId: string,
+    newQuantity: number,
+    notes?: string,
+    isiPerDus?: number
+  ): Promise<boolean> => {
     try {
+      const pendingIsiTimer = pendingIsiMapRef.current.get(itemId);
+      if (pendingIsiTimer) {
+        clearTimeout(pendingIsiTimer);
+        pendingIsiMapRef.current.delete(itemId);
+      }
+
       const target = items.find((i) => i.id === itemId);
       if (!target) return false;
+
+      const resolvedIsiPerDus =
+        isiPerDus !== undefined && Number(isiPerDus) > 0
+          ? Math.max(1, Math.round(Number(isiPerDus)))
+          : target.isiPerDus;
 
       const prevQty = target.quantity || 0;
       const updatedItem: InventoryItem = {
         ...target,
+        ...(resolvedIsiPerDus !== undefined ? { isiPerDus: resolvedIsiPerDus } : {}),
         quantity: Math.max(0, newQuantity),
         lastUpdatedBy: activeUser,
         updatedAt: new Date().toISOString(),
@@ -1153,6 +1233,9 @@ export default function App() {
           barcode: String(raw.barcode || '').trim(),
           kategori: String(raw.kategori || 'Umum').trim(),
           satuan: String(raw.satuan || 'pcs').trim(),
+          ...(raw.isiPerDus && Number(raw.isiPerDus) > 0
+            ? { isiPerDus: Math.max(1, Math.round(Number(raw.isiPerDus))) }
+            : {}),
           quantity: Math.max(0, Number(raw.quantity !== undefined ? raw.quantity : raw.stokAwal) || 0),
           quantitySystem: Math.max(0, Number(raw.quantitySystem !== undefined ? raw.quantitySystem : (raw.stokAwal !== undefined ? raw.stokAwal : raw.quantity)) || 0),
           stokAwal: Math.max(0, Number(raw.stokAwal !== undefined ? raw.stokAwal : raw.quantitySystem) || 0),
@@ -1180,11 +1263,16 @@ export default function App() {
 
           if (existingIndex >= 0) {
             const existing = updatedList[existingIndex];
+            const mergedIsiPerDus =
+              raw.isiPerDus && Number(raw.isiPerDus) > 0
+                ? Math.max(1, Math.round(Number(raw.isiPerDus)))
+                : existing.isiPerDus;
             updatedList[existingIndex] = {
               ...existing,
               namaBarang: raw.namaBarang ? String(raw.namaBarang).trim() : existing.namaBarang,
               kategori: raw.kategori ? String(raw.kategori).trim() : existing.kategori,
               satuan: raw.satuan ? String(raw.satuan).trim() : (existing.satuan || 'pcs'),
+              ...(mergedIsiPerDus !== undefined ? { isiPerDus: mergedIsiPerDus } : {}),
               quantity: raw.quantity !== undefined ? Math.max(0, Number(raw.quantity)) : existing.quantity,
               quantitySystem: raw.quantitySystem !== undefined ? Math.max(0, Number(raw.quantitySystem)) : (raw.stokAwal !== undefined ? Math.max(0, Number(raw.stokAwal)) : existing.quantitySystem),
               stokAwal: raw.stokAwal !== undefined ? Math.max(0, Number(raw.stokAwal)) : (existing.stokAwal ?? existing.quantitySystem),
@@ -1207,6 +1295,9 @@ export default function App() {
               barcode: rawBarcode || `BAR-${Date.now().toString().slice(-6)}-${idx}`,
               kategori: String(raw.kategori || 'Umum').trim(),
               satuan: String(raw.satuan || 'pcs').trim(),
+              ...(raw.isiPerDus && Number(raw.isiPerDus) > 0
+                ? { isiPerDus: Math.max(1, Math.round(Number(raw.isiPerDus))) }
+                : {}),
               quantity: Math.max(0, Number(raw.quantity !== undefined ? raw.quantity : raw.stokAwal) || 0),
               quantitySystem: Math.max(0, Number(raw.quantitySystem !== undefined ? raw.quantitySystem : (raw.stokAwal !== undefined ? raw.stokAwal : raw.quantity)) || 0),
               stokAwal: Math.max(0, Number(raw.stokAwal !== undefined ? raw.stokAwal : raw.quantitySystem) || 0),
@@ -1540,7 +1631,7 @@ export default function App() {
   return (
     <div
       className={`${
-        hasEnteredWorkspace ? 'min-h-screen md:h-screen md:overflow-hidden' : 'min-h-screen overflow-y-auto'
+        hasEnteredWorkspace ? 'h-dvh overflow-hidden' : 'min-h-dvh overflow-y-auto'
       } bg-[#faf8ff] dark:bg-slate-950 text-[#131b2e] dark:text-slate-100 flex flex-col font-sans transition-colors duration-150`}
     >
       {/* Real-time floating toast (positioned above mobile bottom dock & non-blocking wrapper) */}
@@ -1667,7 +1758,7 @@ export default function App() {
       ) : (
         /* MOBILE (<768px): Material-3 Mobile Shell */
         <>
-          <header className="shrink-0 sticky top-0 z-40 pt-safe bg-[#faf8ff]/95 dark:bg-slate-900/95 backdrop-blur-xl shadow-[0_1px_8px_rgba(19,27,46,0.05)] border-b border-[#c3c6d7]/30 dark:border-slate-800 transition-colors">
+          <header className="shrink-0 z-40 pt-safe bg-[#faf8ff]/95 dark:bg-slate-900/95 backdrop-blur-xl shadow-[0_1px_8px_rgba(19,27,46,0.05)] border-b border-[#c3c6d7]/30 dark:border-slate-800 transition-colors">
             <div className="h-16 px-3.5 flex items-center justify-between gap-2.5">
               <div className="flex flex-col justify-center min-w-0 flex-1">
                 <div className="flex items-center gap-1.5 min-w-0">
@@ -1753,7 +1844,7 @@ export default function App() {
             </div>
           </header>
 
-          <main className="flex-1 min-h-0 max-w-7xl w-full mx-auto px-2.5 pt-2 pb-28 flex flex-col">
+          <main className="flex-1 min-h-0 overflow-y-auto overscroll-contain max-w-7xl w-full mx-auto px-2.5 pt-2 pb-8 flex flex-col">
             {activeViewTab !== 'opname' && (
               <div className="shrink-0 bg-white dark:bg-slate-900 rounded-xl border border-[#c3c6d7]/40 dark:border-slate-800 p-3 shadow-2xs mb-2.5 transition-colors">
                 <div className="flex items-center justify-between gap-2">
@@ -1969,6 +2060,7 @@ export default function App() {
                 onOpenDuplicateModal={() => setIsDuplicateModalOpen(true)}
                 onSelectTab={handleSelectViewTab}
                 onSaveCountingAdjust={handleSaveQuickAdjust}
+                onSaveIsiPerDus={handleSaveItemIsiPerDus}
                 onQuickDelta={handleQuickDelta}
                 onQuickAdjust={handleRowQuickAdjust}
                 onOpenCalc={handleRowOpenCalc}
@@ -1979,6 +2071,19 @@ export default function App() {
               />
             )}
           </main>
+
+          {/* Persistent Mobile Bottom Dock Navigation (Always pinned at bottom of screen) */}
+          <MobileBottomDock
+            activeTab={activeViewTab}
+            onSelectTab={handleSelectViewTab}
+            onOpenScanner={() => setIsScannerOpen(true)}
+            onOpenCalculator={() => {
+              setCalcTargetItem(null);
+              setIsGlobalCalcOpen(true);
+            }}
+            onOpenMenu={() => setIsMobileMenuOpen(true)}
+            activeUser={activeUser}
+          />
         </>
       )}
 
@@ -1989,8 +2094,8 @@ export default function App() {
         onClose={() => setIsScannerOpen(false)}
         items={items}
         onScanResult={handleCameraScanResult}
-        onApplyCalculatedQty={async (itemId, calculatedQty, notes) => {
-          return await handleSaveQuickAdjust(itemId, calculatedQty, notes);
+        onApplyCalculatedQty={async (itemId, calculatedQty, notes, isiPerDus) => {
+          return await handleSaveQuickAdjust(itemId, calculatedQty, notes, isiPerDus);
         }}
         onOpenManualAdd={(code) => {
           setPrefilledBarcode(code);
@@ -2111,8 +2216,8 @@ export default function App() {
         }}
         targetItem={calcTargetItem}
         items={items}
-        onApplyQuantity={async (itemId, calculatedQty, notes) => {
-          const success = await handleSaveQuickAdjust(itemId, calculatedQty, notes);
+        onApplyQuantity={async (itemId, calculatedQty, notes, isiPerDus) => {
+          const success = await handleSaveQuickAdjust(itemId, calculatedQty, notes, isiPerDus);
           if (success) {
             setIsGlobalCalcOpen(false);
             setCalcTargetItem(null);
@@ -2353,22 +2458,7 @@ export default function App() {
         </div>
       )}
 
-      {/* 13. Mobile Bottom Dock Navigation (Thumb-friendly Bar at bottom of screen) */}
-      {hasEnteredWorkspace && !isDesktopViewport && (
-        <MobileBottomDock
-          activeTab={activeViewTab}
-          onSelectTab={handleSelectViewTab}
-          onOpenScanner={() => setIsScannerOpen(true)}
-          onOpenCalculator={() => {
-            setCalcTargetItem(null);
-            setIsGlobalCalcOpen(true);
-          }}
-          onOpenMenu={() => setIsMobileMenuOpen(true)}
-          activeUser={activeUser}
-        />
-      )}
-
-      {/* 14. Mobile Full Actions Menu Bottom Sheet */}
+      {/* 13. Mobile Full Actions Menu Bottom Sheet */}
       {hasEnteredWorkspace && !isDesktopViewport && (
         <MobileMenuSheet
           isOpen={isMobileMenuOpen}

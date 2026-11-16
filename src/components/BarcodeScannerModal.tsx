@@ -29,7 +29,7 @@ interface BarcodeScannerModalProps {
     barcode: string,
     mode: 'calculator' | 'increment'
   ) => Promise<{ success: boolean; item?: InventoryItem; notFound?: boolean }>;
-  onApplyCalculatedQty?: (itemId: string, newQuantity: number, notes?: string) => Promise<boolean>;
+  onApplyCalculatedQty?: (itemId: string, newQuantity: number, notes?: string, isiPerDus?: number) => Promise<boolean>;
   onOpenManualAdd: (barcode: string) => void;
   onOpenFullCalculator?: (item: InventoryItem) => void;
 }
@@ -94,18 +94,22 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     return Math.max(0, total);
   }, [dusCount, isiPerDus, pcsExtra, manualCalcQty]);
 
-  // Reset states when item changes
+  // Reset states when item changes (prioritizing saved isiPerDus)
   useEffect(() => {
     if (activeItem) {
-      const nameLower = activeItem.namaBarang.toLowerCase();
-      if (nameLower.includes('mie') || nameLower.includes('indomie') || nameLower.includes('sedap')) {
-        setIsiPerDus(40);
-      } else if (nameLower.includes('minyak') || nameLower.includes('bimoli') || nameLower.includes('sanco')) {
-        setIsiPerDus(12);
-      } else if (nameLower.includes('susu') || nameLower.includes('kental')) {
-        setIsiPerDus(48);
+      if (activeItem.isiPerDus && activeItem.isiPerDus > 0) {
+        setIsiPerDus(Math.max(1, Math.round(activeItem.isiPerDus)));
       } else {
-        setIsiPerDus(24);
+        const nameLower = activeItem.namaBarang.toLowerCase();
+        if (nameLower.includes('mie') || nameLower.includes('indomie') || nameLower.includes('sedap')) {
+          setIsiPerDus(40);
+        } else if (nameLower.includes('minyak') || nameLower.includes('bimoli') || nameLower.includes('sanco')) {
+          setIsiPerDus(12);
+        } else if (nameLower.includes('susu') || nameLower.includes('kental')) {
+          setIsiPerDus(48);
+        } else {
+          setIsiPerDus(24);
+        }
       }
       setDusCount('');
       setPcsExtra('');
@@ -389,12 +393,17 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     if (!activeItem || !onApplyCalculatedQty) return;
     setIsSavingQty(true);
 
+    const validIsiPerDus =
+      typeof isiPerDus === 'number' && isiPerDus > 0
+        ? Math.max(1, Math.round(isiPerDus))
+        : undefined;
+
     let note = `Kalkulator: ${calculatedTotal} pcs`;
     if (typeof dusCount === 'number' && dusCount > 0) {
       note = `Kalkulator: ${dusCount} dus × ${isiPerDus} + ${pcsExtra || 0} pcs = ${calculatedTotal} pcs`;
     }
 
-    const success = await onApplyCalculatedQty(activeItem.id, calculatedTotal, note);
+    const success = await onApplyCalculatedQty(activeItem.id, calculatedTotal, note, validIsiPerDus);
     setIsSavingQty(false);
 
     if (success) {
@@ -402,6 +411,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
       setActiveItem({
         ...activeItem,
         quantity: calculatedTotal,
+        ...(validIsiPerDus ? { isiPerDus: validIsiPerDus } : {}),
       });
       setScanStatus('success');
       setTimeout(() => {
@@ -707,8 +717,11 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
                   </div>
 
                   <div>
-                    <label className="block text-[11px] text-slate-500 dark:text-slate-400 mb-1">
-                      Isi per Dus
+                    <label className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 mb-1">
+                      <span>Isi per Dus</span>
+                      {activeItem.isiPerDus && activeItem.isiPerDus > 0 && (
+                        <span className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400">Tersimpan</span>
+                      )}
                     </label>
                     <input
                       type="number"
