@@ -750,35 +750,71 @@ export default function App() {
     }
   };
 
-  // Submit handler for Barcode & QR Code Search: opens calculator for item or registers new
+  // Submit handler for Search & Barcode/QR Code: prioritizes exact barcode/QR/SKU scan, falls back to catalog text search
   const handleBarcodeSearchSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const query = searchQuery.trim();
     if (!query) return;
 
+    // 1. Exact Barcode / QR Code / SKU match
     const matching = findItemsByScan(items, query);
-    const found = matching.length > 0 ? matching[0] : items.find(
-      (i) => (i.barcode && i.barcode.toLowerCase() === query.toLowerCase()) || i.sku.toLowerCase() === query.toLowerCase()
-    );
+    const exactMatch =
+      matching.length > 0
+        ? matching[0]
+        : items.find(
+            (i) =>
+              (i.barcode && i.barcode.trim().toLowerCase() === query.toLowerCase()) ||
+              (i.sku && i.sku.trim().toLowerCase() === query.toLowerCase())
+          );
 
-    if (found) {
-      setActiveCountingItemId(found.id);
+    if (exactMatch) {
+      setActiveCountingItemId(exactMatch.id);
       if (soundEnabled) playScanSuccessSound();
       if (isDesktopViewport) {
-        setCalcTargetItem(found);
+        setCalcTargetItem(exactMatch);
         setIsGlobalCalcOpen(true);
-        showToast(`[Kalkulator] ${found.namaBarang} siap dihitung.`, 'info');
+        showToast(`[Kalkulator] ${exactMatch.namaBarang} siap dihitung.`, 'info');
       } else {
-        showToast(`[Aktif] ${found.namaBarang} dimuat di Kalkulator Box.`, 'success');
+        showToast(`[Aktif] ${exactMatch.namaBarang} dimuat di Kalkulator Box.`, 'success');
       }
       setSearchQuery('');
-    } else {
-      if (soundEnabled) playScanWarningSound();
+      return;
+    }
+
+    // 2. Product Name / Partial SKU / Partial Barcode / Notes Search
+    const tokens = query.toLowerCase().split(/\s+/).filter(Boolean);
+    const partialMatches = items.filter((item) => {
+      const searchable = `${item.namaBarang || ''} ${item.sku || ''} ${item.barcode || ''} ${item.kategori || ''} ${item.keterangan || ''}`.toLowerCase();
+      return tokens.every((tok) => searchable.includes(tok));
+    });
+
+    if (partialMatches.length > 0) {
+      setActiveCountingItemId(partialMatches[0].id);
+      if (soundEnabled) playScanSuccessSound();
+      showToast(
+        partialMatches.length === 1
+          ? `Ditemukan: ${partialMatches[0].namaBarang}`
+          : `Ditemukan ${partialMatches.length} barang untuk "${query}"`,
+        'success'
+      );
+      return;
+    }
+
+    // 3. Not found anywhere in catalog
+    if (soundEnabled) playScanWarningSound();
+    const candidates = extractScanCandidates(query);
+    const isLikelyBarcodeOrQr =
+      candidates.length > 1 ||
+      /^\d{5,}$/.test(query) ||
+      /^(sku|bar)[-_]?\d+/i.test(query);
+
+    if (isLikelyBarcodeOrQr) {
       showToast(`Kode "${query}" belum terdaftar. Tambahkan sebagai barang baru?`, 'alert');
-      const candidates = extractScanCandidates(query);
       setPrefilledBarcode(candidates[0] || query);
       setEditingItem(null);
       setIsItemFormOpen(true);
+    } else {
+      showToast(`Barang "${query}" tidak ditemukan di katalog.`, 'alert');
     }
   };
 
@@ -1354,21 +1390,26 @@ export default function App() {
   const filteredItems = useMemo(() => {
     return items
       .filter((item) => {
-        // Search filter (Default Barcode Scanner search prioritized)
+        // Search filter (Supports multi-word product name, SKU, barcode, QR payload, & category)
         if (deferredSearchQuery.trim()) {
-          const q = deferredSearchQuery.toLowerCase().trim();
-          if (searchMode === 'barcode') {
-            const matchBarcode = item.barcode.toLowerCase().includes(q);
-            const matchSku = item.sku.toLowerCase().includes(q);
-            if (!matchBarcode && !matchSku) {
-              if (!item.namaBarang.toLowerCase().includes(q)) return false;
+          const rawQ = deferredSearchQuery.trim();
+          const candidates = extractScanCandidates(rawQ);
+          const candidateMatch =
+            candidates.length > 1 &&
+            candidates.some((cand) => {
+              const c = cand.toLowerCase();
+              return (
+                (item.barcode || '').toLowerCase() === c ||
+                (item.sku || '').toLowerCase() === c
+              );
+            });
+
+          if (!candidateMatch) {
+            const tokens = rawQ.toLowerCase().split(/\s+/).filter(Boolean);
+            const searchable = `${item.namaBarang || ''} ${item.sku || ''} ${item.barcode || ''} ${item.kategori || ''} ${item.keterangan || ''}`.toLowerCase();
+            if (!tokens.every((tok) => searchable.includes(tok))) {
+              return false;
             }
-          } else {
-            const matchSku = item.sku.toLowerCase().includes(q);
-            const matchName = item.namaBarang.toLowerCase().includes(q);
-            const matchBarcode = item.barcode.toLowerCase().includes(q);
-            const matchNotes = (item.keterangan || '').toLowerCase().includes(q);
-            if (!matchSku && !matchName && !matchBarcode && !matchNotes) return false;
           }
         }
 

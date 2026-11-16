@@ -229,6 +229,91 @@ export const MobileOpnameWorkspace: React.FC<MobileOpnameWorkspaceProps> = ({
   };
 
   const displayedTriage = showAllTriage ? triageItems : triageItems.slice(0, 4);
+  const isSearching = Boolean(searchQuery.trim());
+
+  const inventoryListSection = (
+    <section className="space-y-2 pt-1">
+      <div className="flex items-center justify-between px-0.5">
+        <h2 className="text-sm font-bold text-[#131b2e] dark:text-white">
+          {isSearching
+            ? `Hasil Pencarian (${filteredItems.length})`
+            : `Daftar Barang Inventaris (${filteredItems.length})`}
+        </h2>
+        {(selectedCategory !== 'ALL' || discrepancyFilter !== 'ALL' || searchQuery) && (
+          <button
+            type="button"
+            onClick={() => {
+              onSelectCategory('ALL');
+              onChangeDiscrepancyFilter('ALL');
+              onSearchQueryChange('');
+            }}
+            className="text-[11px] font-bold text-[#004ac6] dark:text-blue-400 hover:underline"
+          >
+            {isSearching ? 'Tutup Pencarian' : 'Reset Filter'}
+          </button>
+        )}
+      </div>
+
+      <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-[#c3c6d7]/30 dark:border-slate-800 divide-y divide-[#eaedff] dark:divide-slate-800 overflow-hidden">
+        {filteredItems.length === 0 ? (
+          <div className="py-10 px-4 text-center text-xs text-[#434655] dark:text-slate-400 space-y-2">
+            <p>
+              {isSearching
+                ? `Tidak ada barang yang cocok dengan "${searchQuery.trim()}".`
+                : 'Tidak ada barang yang cocok dengan filter atau pencarian saat ini.'}
+            </p>
+            {activeUser === 'IYAN' && items.length === 0 && (
+              <button
+                type="button"
+                onClick={onOpenImportExport}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-[#003ea8] dark:text-blue-300 bg-[#dbe1ff] dark:bg-blue-950 rounded-lg"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                <span>Import File XLSX</span>
+              </button>
+            )}
+          </div>
+        ) : (
+          <>
+            {visibleItems.map((item) => (
+              <MobileInventoryCard
+                key={item.id}
+                item={item}
+                isDuplicateSku={duplicateAnalysis.duplicateSkus.has((item.sku || '').trim().toUpperCase())}
+                isDuplicateBarcode={Boolean(item.barcode && duplicateAnalysis.duplicateBarcodes.has(item.barcode.trim()))}
+                onQuickDelta={onQuickDelta}
+                onQuickAdjust={onQuickAdjust}
+                onOpenCalc={(target) => {
+                  handleFocusCountingCard(target);
+                }}
+                onEditItem={onEditItem}
+                onDeleteItem={onDeleteItem}
+                onOpenDuplicate={onOpenDuplicateModal}
+              />
+            ))}
+            {hasMoreVisibleItems && (
+              <div className="p-3 flex items-center justify-center gap-2 bg-[#f2f3ff] dark:bg-slate-800/40">
+                <button
+                  type="button"
+                  onClick={onLoadMore}
+                  className="px-3.5 py-2 text-xs font-bold text-[#003ea8] dark:text-blue-300 bg-[#dbe1ff] dark:bg-blue-950/60 rounded-lg active:scale-95 transition-transform"
+                >
+                  Muat +120 ({filteredItems.length - visibleItems.length} tersisa)
+                </button>
+                <button
+                  type="button"
+                  onClick={onShowAll}
+                  className="px-3 py-2 text-xs font-medium text-[#434655] dark:text-slate-300 bg-white dark:bg-slate-800 border border-[#c3c6d7]/50 dark:border-slate-700 rounded-lg active:scale-95 transition-transform"
+                >
+                  Tampilkan Semua
+                </button>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </section>
+  );
 
   return (
     <div className="flex flex-col w-full space-y-3 pb-4">
@@ -348,10 +433,15 @@ export const MobileOpnameWorkspace: React.FC<MobileOpnameWorkspaceProps> = ({
         </button>
       </section>
 
-      {/* 2. Universal Barcode Quick-Trigger, Search Input & Compact Filter Controls */}
+      {/* 2. Universal Barcode Quick-Trigger, Search Input & Add Item CTA */}
       <section className="bg-white dark:bg-slate-900 p-2.5 rounded-xl shadow-sm border border-[#c3c6d7]/30 dark:border-slate-800 space-y-2">
         <form
-          onSubmit={onBarcodeSearchSubmit}
+          onSubmit={(e) => {
+            if (document.activeElement instanceof HTMLElement) {
+              document.activeElement.blur();
+            }
+            onBarcodeSearchSubmit(e);
+          }}
           className="flex items-center gap-1.5 bg-[#f2f3ff] dark:bg-slate-800 px-2.5 py-1.5 rounded-lg"
         >
           <QrCode className="w-5 h-5 text-[#004ac6] dark:text-blue-400 shrink-0" />
@@ -359,7 +449,7 @@ export const MobileOpnameWorkspace: React.FC<MobileOpnameWorkspaceProps> = ({
             type="text"
             value={searchQuery}
             onChange={(e) => onSearchQueryChange(e.target.value)}
-            placeholder="Pindai barcode / QR atau ketik SKU..."
+            placeholder="Cari nama barang, SKU, atau barcode..."
             className="w-full min-w-0 bg-transparent font-mono text-xs text-[#131b2e] dark:text-white placeholder:text-[#737686] dark:placeholder:text-slate-500 focus:outline-none"
           />
           {searchQuery && (
@@ -422,6 +512,9 @@ export const MobileOpnameWorkspace: React.FC<MobileOpnameWorkspaceProps> = ({
           </div>
         )}
       </section>
+
+      {/* Show search results right below search box when searching */}
+      {isSearching && inventoryListSection}
 
       {/* 3. Active Counting Card: Kalkulator Box & Eceran (Live Hero Card) */}
       <section
@@ -768,82 +861,8 @@ export const MobileOpnameWorkspace: React.FC<MobileOpnameWorkspaceProps> = ({
         </section>
       )}
 
-      {/* 5. Daftar Lengkap Barang (Filterable & Quick Stepper) */}
-      <section className="space-y-2 pt-1">
-        <div className="flex items-center justify-between px-0.5">
-          <h2 className="text-sm font-bold text-[#131b2e] dark:text-white">
-            Daftar Barang Inventaris ({filteredItems.length})
-          </h2>
-          {(selectedCategory !== 'ALL' || discrepancyFilter !== 'ALL' || searchQuery) && (
-            <button
-              type="button"
-              onClick={() => {
-                onSelectCategory('ALL');
-                onChangeDiscrepancyFilter('ALL');
-                onSearchQueryChange('');
-              }}
-              className="text-[11px] font-bold text-[#004ac6] dark:text-blue-400 hover:underline"
-            >
-              Reset Filter
-            </button>
-          )}
-        </div>
-
-        <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-[#c3c6d7]/30 dark:border-slate-800 divide-y divide-[#eaedff] dark:divide-slate-800 overflow-hidden">
-          {filteredItems.length === 0 ? (
-            <div className="py-10 px-4 text-center text-xs text-[#434655] dark:text-slate-400 space-y-2">
-              <p>Tidak ada barang yang cocok dengan filter atau pencarian saat ini.</p>
-              {activeUser === 'IYAN' && items.length === 0 && (
-                <button
-                  type="button"
-                  onClick={onOpenImportExport}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-[#003ea8] dark:text-blue-300 bg-[#dbe1ff] dark:bg-blue-950 rounded-lg"
-                >
-                  <Upload className="w-3.5 h-3.5" />
-                  <span>Import File XLSX</span>
-                </button>
-              )}
-            </div>
-          ) : (
-            <>
-              {visibleItems.map((item) => (
-                <MobileInventoryCard
-                  key={item.id}
-                  item={item}
-                  isDuplicateSku={duplicateAnalysis.duplicateSkus.has((item.sku || '').trim().toUpperCase())}
-                  isDuplicateBarcode={Boolean(item.barcode && duplicateAnalysis.duplicateBarcodes.has(item.barcode.trim()))}
-                  onQuickDelta={onQuickDelta}
-                  onQuickAdjust={onQuickAdjust}
-                  onOpenCalc={(target) => {
-                    handleFocusCountingCard(target);
-                  }}
-                  onEditItem={onEditItem}
-                  onDeleteItem={onDeleteItem}
-                  onOpenDuplicate={onOpenDuplicateModal}
-                />
-              ))}
-              {hasMoreVisibleItems && (
-                <div className="p-3 flex items-center justify-center gap-2 bg-[#f2f3ff] dark:bg-slate-800/40">
-                  <button
-                    type="button"
-                    onClick={onLoadMore}
-                    className="px-3.5 py-2 text-xs font-bold text-[#003ea8] dark:text-blue-300 bg-[#dbe1ff] dark:bg-blue-950/60 rounded-lg active:scale-95 transition-transform"
-                  >
-                    Muat +120 ({filteredItems.length - visibleItems.length} tersisa)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={onShowAll}
-                    className="px-3 py-2 text-xs font-medium text-[#434655] dark:text-slate-300 bg-white dark:bg-slate-800 border border-[#c3c6d7]/50 dark:border-slate-700 rounded-lg active:scale-95 transition-transform"
-                  >
-                    Tampilkan Semua
-                  </button>
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      </section>
+      {/* 5. Daftar Lengkap Barang (shown at bottom when not actively searching) */}
+      {!isSearching && inventoryListSection}
     </div>
   );
 };
