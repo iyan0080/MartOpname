@@ -64,6 +64,11 @@ export const MobileInventoryCard = React.memo<InventoryRowProps>(({
                 1 dus = {item.isiPerDus}
               </span>
             )}
+            {item.isiPerPack !== undefined && item.isiPerPack > 0 && (
+              <span className="text-[10px] font-mono font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 px-1.5 py-0.5 rounded">
+                1 rtg = {item.isiPerPack}
+              </span>
+            )}
             {item.status && item.status !== 'AKTIF' && (
               <span
                 className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
@@ -269,6 +274,11 @@ export const DesktopInventoryRow = React.memo<InventoryRowProps>(({
           {item.isiPerDus !== undefined && item.isiPerDus > 0 && (
             <span className="text-[10px] font-mono font-semibold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/60 px-1.5 py-0.2 rounded">
               {item.isiPerDus}/dus
+            </span>
+          )}
+          {item.isiPerPack !== undefined && item.isiPerPack > 0 && (
+            <span className="text-[10px] font-mono font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 px-1.5 py-0.2 rounded">
+              {item.isiPerPack}/rtg
             </span>
           )}
           {item.status && item.status !== 'AKTIF' && (

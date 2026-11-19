@@ -60,8 +60,15 @@ interface MobileOpnameWorkspaceProps {
   onOpenImportExport: () => void;
   onOpenDuplicateModal: () => void;
   onSelectTab: (tab: 'opname' | 'laporan' | 'kategori') => void;
-  onSaveCountingAdjust: (itemId: string, newQuantity: number, notes?: string, isiPerDus?: number) => Promise<boolean>;
+  onSaveCountingAdjust: (
+    itemId: string,
+    newQuantity: number,
+    notes?: string,
+    isiPerDus?: number,
+    isiPerPack?: number
+  ) => Promise<boolean>;
   onSaveIsiPerDus?: (itemId: string, isiPerDus: number) => void;
+  onSaveIsiPerPack?: (itemId: string, isiPerPack: number) => void;
   onQuickDelta: (itemId: string, delta: number) => void;
   onQuickAdjust: (item: InventoryItem) => void;
   onOpenCalc: (item: InventoryItem) => void;
@@ -87,6 +94,14 @@ function getDefaultIsiPerBox(item: InventoryItem | null): number {
     return 48;
   }
   return 24;
+}
+
+function getDefaultIsiPerPack(item: InventoryItem | null): number {
+  if (!item) return 10;
+  if (item.isiPerPack !== undefined && item.isiPerPack > 0) {
+    return Math.max(1, Math.round(item.isiPerPack));
+  }
+  return 10;
 }
 
 export const MobileOpnameWorkspace: React.FC<MobileOpnameWorkspaceProps> = ({
@@ -119,6 +134,7 @@ export const MobileOpnameWorkspace: React.FC<MobileOpnameWorkspaceProps> = ({
   onSelectTab,
   onSaveCountingAdjust,
   onSaveIsiPerDus,
+  onSaveIsiPerPack,
   onQuickDelta,
   onQuickAdjust,
   onOpenCalc,
@@ -129,6 +145,7 @@ export const MobileOpnameWorkspace: React.FC<MobileOpnameWorkspaceProps> = ({
 }) => {
   const countingCardRef = useRef<HTMLElement | null>(null);
   const prevActiveItemIdRef = useRef<string | null>(null);
+  const isiPackTouchedRef = useRef<boolean>(false);
 
   // Pick active counting item (explicitly selected -> first triage item -> first filtered item -> first item)
   const activeItem = useMemo(() => {
@@ -156,13 +173,15 @@ export const MobileOpnameWorkspace: React.FC<MobileOpnameWorkspaceProps> = ({
 
   const [showAllTriage, setShowAllTriage] = useState(false);
 
-  // Active counting calculator state (Jml Box, Isi/Box, Ecer Lepas — NO preset chips)
+  // Active counting calculator state (Jml Box, Isi/Box, Jml RTG/Pack, Isi/RTG·Pack, Ecer Lepas)
   const [jmlBox, setJmlBox] = useState<number>(0);
   const [isiPerBox, setIsiPerBox] = useState<number | ''>(24);
+  const [jmlPack, setJmlPack] = useState<number>(0);
+  const [isiPerPack, setIsiPerPack] = useState<number | ''>(10);
   const [ecerLepas, setEcerLepas] = useState<number>(0);
   const [isSavingActive, setIsSavingActive] = useState(false);
 
-  // Sync box/ecer inputs when activeItem changes or saved isiPerDus updates from Cloud
+  // Sync box/pack/ecer inputs when activeItem changes or saved isiPerDus/isiPerPack updates from Cloud
   useEffect(() => {
     const nextId = activeItem?.id ?? null;
     const idChanged = prevActiveItemIdRef.current !== nextId;
@@ -170,24 +189,37 @@ export const MobileOpnameWorkspace: React.FC<MobileOpnameWorkspaceProps> = ({
 
     if (activeItem) {
       if (idChanged) {
+        isiPackTouchedRef.current = false;
         setJmlBox(0);
         setIsiPerBox(getDefaultIsiPerBox(activeItem));
+        setJmlPack(0);
+        setIsiPerPack(getDefaultIsiPerPack(activeItem));
         setEcerLepas(Math.max(0, activeItem.quantity || 0));
-      } else if (activeItem.isiPerDus && activeItem.isiPerDus > 0) {
-        setIsiPerBox((prev) =>
-          prev === '' ? prev : Math.max(1, Math.round(activeItem.isiPerDus!))
-        );
+      } else {
+        if (activeItem.isiPerDus && activeItem.isiPerDus > 0) {
+          setIsiPerBox((prev) =>
+            prev === '' ? prev : Math.max(1, Math.round(activeItem.isiPerDus!))
+          );
+        }
+        if (activeItem.isiPerPack && activeItem.isiPerPack > 0) {
+          setIsiPerPack((prev) =>
+            prev === '' ? prev : Math.max(1, Math.round(activeItem.isiPerPack!))
+          );
+        }
       }
     } else {
+      isiPackTouchedRef.current = false;
       setJmlBox(0);
       setIsiPerBox(24);
+      setJmlPack(0);
+      setIsiPerPack(10);
       setEcerLepas(0);
     }
-  }, [activeItem?.id, activeItem?.isiPerDus]);
+  }, [activeItem?.id, activeItem?.isiPerDus, activeItem?.isiPerPack]);
 
   // Keep loose eceran synced if user tapped +1 / -1 directly on a mobile card
   useEffect(() => {
-    if (activeItem && jmlBox === 0) {
+    if (activeItem && jmlBox === 0 && jmlPack === 0) {
       setEcerLepas(Math.max(0, activeItem.quantity || 0));
     }
   }, [activeItem?.quantity]);
@@ -207,16 +239,24 @@ export const MobileOpnameWorkspace: React.FC<MobileOpnameWorkspaceProps> = ({
     typeof isiPerBox === 'number' && isiPerBox >= 1
       ? Math.round(isiPerBox)
       : getDefaultIsiPerBox(activeItem);
+  const safePack = Math.max(0, jmlPack);
+  const safeIsiPack =
+    typeof isiPerPack === 'number' && isiPerPack >= 1
+      ? Math.round(isiPerPack)
+      : getDefaultIsiPerPack(activeItem);
   const safeEcer = Math.max(0, ecerLepas);
-  const totalCalculated = safeBox * safeIsi + safeEcer;
+  const totalCalculated = safeBox * safeIsi + safePack * safeIsiPack + safeEcer;
   const activeSystemQty = activeItem?.quantitySystem || 0;
   const activeDiff = totalCalculated - activeSystemQty;
   const activeSatuan = activeItem?.satuan || 'pcs';
 
   const handleFocusCountingCard = (item: InventoryItem) => {
     onSelectCountingItem(item.id);
+    isiPackTouchedRef.current = false;
     setJmlBox(0);
     setIsiPerBox(getDefaultIsiPerBox(item));
+    setJmlPack(0);
+    setIsiPerPack(getDefaultIsiPerPack(item));
     setEcerLepas(Math.max(0, item.quantity || 0));
     if (countingCardRef.current) {
       countingCardRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -231,15 +271,40 @@ export const MobileOpnameWorkspace: React.FC<MobileOpnameWorkspaceProps> = ({
     }
   };
 
+  const handleIsiPerPackChange = (nextVal: number) => {
+    const safeVal = Math.max(1, Math.round(nextVal || 1));
+    isiPackTouchedRef.current = true;
+    setIsiPerPack(safeVal);
+    if (activeItem && onSaveIsiPerPack) {
+      onSaveIsiPerPack(activeItem.id, safeVal);
+    }
+  };
+
   const handleSaveAndNext = async () => {
     if (!activeItem || isSavingActive) return;
     setIsSavingActive(true);
+    const parts: string[] = [];
+    if (safeBox > 0) parts.push(`(${safeBox} × ${safeIsi} dus)`);
+    if (safePack > 0) parts.push(`(${safePack} × ${safeIsiPack} rtg/pack)`);
+    if (safeEcer > 0 || parts.length === 0) parts.push(`${safeEcer}`);
+
     const note =
-      safeBox > 0
-        ? `Hitung Box & Eceran: (${safeBox} × ${safeIsi}) + ${safeEcer} = ${totalCalculated} ${activeSatuan}`
+      safeBox > 0 || safePack > 0
+        ? `Hitung Box & RTG/Pack: ${parts.join(' + ')} = ${totalCalculated} ${activeSatuan}`
         : `Hitung Fisik Mobile: ${totalCalculated} ${activeSatuan}`;
 
-    const ok = await onSaveCountingAdjust(activeItem.id, totalCalculated, note, safeIsi);
+    const isiPackToSave =
+      isiPackTouchedRef.current || safePack > 0 || (activeItem.isiPerPack && activeItem.isiPerPack > 0)
+        ? safeIsiPack
+        : undefined;
+
+    const ok = await onSaveCountingAdjust(
+      activeItem.id,
+      totalCalculated,
+      note,
+      safeIsi,
+      isiPackToSave
+    );
     setIsSavingActive(false);
 
     if (ok) {
@@ -634,108 +699,202 @@ export const MobileOpnameWorkspace: React.FC<MobileOpnameWorkspaceProps> = ({
               </div>
             </div>
 
-            {/* 3-Column Ergonomic Calculation Grid (NO Preset Pack Chips) */}
-            <div className="grid grid-cols-3 gap-2 select-none">
-              {/* Column 1: Jml Box */}
-              <div className="bg-[#f2f3ff] dark:bg-slate-800/80 p-2 rounded-lg flex flex-col justify-between">
-                <div className="text-center mb-1.5">
-                  <span className="text-[11px] font-bold text-[#434655] dark:text-slate-200 block">
-                    Jml Box
-                  </span>
-                  <span className="text-[10px] text-[#737686] dark:text-slate-400 block">Dus/Karton</span>
+            {/* Ergonomic Box, RTG/Pack & Loose Eceran Calculation Grid */}
+            <div className="space-y-2 select-none">
+              {/* Row 1: Box / Karton */}
+              <div className="grid grid-cols-2 gap-2">
+                {/* Jml Box */}
+                <div className="bg-[#f2f3ff] dark:bg-slate-800/80 p-2 rounded-lg flex flex-col justify-between">
+                  <div className="text-center mb-1.5">
+                    <span className="text-[11px] font-bold text-[#434655] dark:text-slate-200 block">
+                      Jml Box
+                    </span>
+                    <span className="text-[10px] text-[#737686] dark:text-slate-400 block">Dus/Karton</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-1 bg-white dark:bg-slate-900 rounded-md p-1 shadow-xs">
+                    <button
+                      type="button"
+                      onClick={() => setJmlBox((v) => Math.max(0, v - 1))}
+                      className="w-8 h-9 rounded bg-[#eaedff] dark:bg-slate-800 hover:bg-[#dae2fd] dark:hover:bg-slate-700 flex items-center justify-center text-[#131b2e] dark:text-white active:scale-90 transition-transform shrink-0"
+                      aria-label="Kurangi jumlah box"
+                    >
+                      <Minus className="w-3.5 h-3.5" />
+                    </button>
+                    <input
+                      type="number"
+                      min="0"
+                      value={jmlBox}
+                      onChange={(e) => setJmlBox(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                      className="w-full min-w-0 text-center bg-transparent font-mono font-extrabold text-sm text-[#131b2e] dark:text-white focus:outline-none tabular-nums"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setJmlBox((v) => v + 1)}
+                      className="w-8 h-9 rounded bg-[#eaedff] dark:bg-slate-800 hover:bg-[#dae2fd] dark:hover:bg-slate-700 flex items-center justify-center text-[#004ac6] dark:text-blue-400 active:scale-90 transition-transform shrink-0"
+                      aria-label="Tambah jumlah box"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
-                <div className="flex items-center justify-between gap-1 bg-white dark:bg-slate-900 rounded-md p-1 shadow-xs">
-                  <button
-                    type="button"
-                    onClick={() => setJmlBox((v) => Math.max(0, v - 1))}
-                    className="w-7 h-9 rounded bg-[#eaedff] dark:bg-slate-800 hover:bg-[#dae2fd] dark:hover:bg-slate-700 flex items-center justify-center text-[#131b2e] dark:text-white active:scale-90 transition-transform shrink-0"
-                    aria-label="Kurangi jumlah box"
-                  >
-                    <Minus className="w-3.5 h-3.5" />
-                  </button>
-                  <input
-                    type="number"
-                    min="0"
-                    value={jmlBox}
-                    onChange={(e) => setJmlBox(Math.max(0, parseInt(e.target.value, 10) || 0))}
-                    className="w-full min-w-0 text-center bg-transparent font-mono font-extrabold text-sm text-[#131b2e] dark:text-white focus:outline-none tabular-nums"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setJmlBox((v) => v + 1)}
-                    className="w-7 h-9 rounded bg-[#eaedff] dark:bg-slate-800 hover:bg-[#dae2fd] dark:hover:bg-slate-700 flex items-center justify-center text-[#004ac6] dark:text-blue-400 active:scale-90 transition-transform shrink-0"
-                    aria-label="Tambah jumlah box"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                  </button>
+
+                {/* Isi/Box */}
+                <div className="bg-[#f2f3ff] dark:bg-slate-800/80 p-2 rounded-lg flex flex-col justify-between">
+                  <div className="text-center mb-1.5">
+                    <span className="text-[11px] font-bold text-[#434655] dark:text-slate-200 block">
+                      Isi/Box
+                    </span>
+                    <span className="text-[10px] text-[#737686] dark:text-slate-400 block">
+                      {activeItem.isiPerDus && activeItem.isiPerDus > 0 ? 'Pcs/Dus ✓' : 'Pcs/Dus'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-1 bg-white dark:bg-slate-900 rounded-md p-1 shadow-xs">
+                    <button
+                      type="button"
+                      onClick={() => handleIsiPerBoxChange(Math.max(1, safeIsi - 1))}
+                      className="w-8 h-9 rounded bg-[#eaedff] dark:bg-slate-800 hover:bg-[#dae2fd] dark:hover:bg-slate-700 flex items-center justify-center text-[#131b2e] dark:text-white active:scale-90 transition-transform shrink-0"
+                      aria-label="Kurangi isi per box"
+                    >
+                      <Minus className="w-3.5 h-3.5" />
+                    </button>
+                    <input
+                      type="number"
+                      min="1"
+                      value={isiPerBox}
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        if (raw === '') {
+                          setIsiPerBox('');
+                          return;
+                        }
+                        const parsed = parseInt(raw, 10);
+                        if (!isNaN(parsed)) {
+                          handleIsiPerBoxChange(Math.max(1, parsed));
+                        }
+                      }}
+                      onBlur={() => {
+                        if (isiPerBox === '' || isiPerBox < 1) {
+                          setIsiPerBox(getDefaultIsiPerBox(activeItem));
+                        }
+                      }}
+                      className="w-full min-w-0 text-center bg-transparent font-mono font-extrabold text-sm text-[#131b2e] dark:text-white focus:outline-none tabular-nums"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleIsiPerBoxChange(safeIsi + 1)}
+                      className="w-8 h-9 rounded bg-[#eaedff] dark:bg-slate-800 hover:bg-[#dae2fd] dark:hover:bg-slate-700 flex items-center justify-center text-[#004ac6] dark:text-blue-400 active:scale-90 transition-transform shrink-0"
+                      aria-label="Tambah isi per box"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
               </div>
 
-              {/* Column 2: Isi/Box */}
-              <div className="bg-[#f2f3ff] dark:bg-slate-800/80 p-2 rounded-lg flex flex-col justify-between">
-                <div className="text-center mb-1.5">
-                  <span className="text-[11px] font-bold text-[#434655] dark:text-slate-200 block">
-                    Isi/Box
-                  </span>
-                  <span className="text-[10px] text-[#737686] dark:text-slate-400 block">
-                    {activeItem.isiPerDus && activeItem.isiPerDus > 0 ? 'Pcs/Dus ✓' : 'Pcs/Dus'}
-                  </span>
+              {/* Row 2: RTG / Pack */}
+              <div className="grid grid-cols-2 gap-2">
+                {/* Jml RTG/Pack */}
+                <div className="bg-[#f2f3ff] dark:bg-slate-800/80 p-2 rounded-lg flex flex-col justify-between">
+                  <div className="text-center mb-1.5">
+                    <span className="text-[11px] font-bold text-[#434655] dark:text-slate-200 block">
+                      Jml RTG/Pack
+                    </span>
+                    <span className="text-[10px] text-[#737686] dark:text-slate-400 block">Renteng / Pack</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-1 bg-white dark:bg-slate-900 rounded-md p-1 shadow-xs">
+                    <button
+                      type="button"
+                      onClick={() => setJmlPack((v) => Math.max(0, v - 1))}
+                      className="w-8 h-9 rounded bg-[#eaedff] dark:bg-slate-800 hover:bg-[#dae2fd] dark:hover:bg-slate-700 flex items-center justify-center text-[#131b2e] dark:text-white active:scale-90 transition-transform shrink-0"
+                      aria-label="Kurangi jumlah renteng atau pack"
+                    >
+                      <Minus className="w-3.5 h-3.5" />
+                    </button>
+                    <input
+                      type="number"
+                      min="0"
+                      value={jmlPack}
+                      onChange={(e) => setJmlPack(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                      className="w-full min-w-0 text-center bg-transparent font-mono font-extrabold text-sm text-[#131b2e] dark:text-white focus:outline-none tabular-nums"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setJmlPack((v) => v + 1)}
+                      className="w-8 h-9 rounded bg-[#eaedff] dark:bg-slate-800 hover:bg-[#dae2fd] dark:hover:bg-slate-700 flex items-center justify-center text-[#004ac6] dark:text-blue-400 active:scale-90 transition-transform shrink-0"
+                      aria-label="Tambah jumlah renteng atau pack"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
-                <div className="flex items-center justify-between gap-1 bg-white dark:bg-slate-900 rounded-md p-1 shadow-xs">
-                  <button
-                    type="button"
-                    onClick={() => handleIsiPerBoxChange(Math.max(1, safeIsi - 1))}
-                    className="w-7 h-9 rounded bg-[#eaedff] dark:bg-slate-800 hover:bg-[#dae2fd] dark:hover:bg-slate-700 flex items-center justify-center text-[#131b2e] dark:text-white active:scale-90 transition-transform shrink-0"
-                    aria-label="Kurangi isi per box"
-                  >
-                    <Minus className="w-3.5 h-3.5" />
-                  </button>
-                  <input
-                    type="number"
-                    min="1"
-                    value={isiPerBox}
-                    onChange={(e) => {
-                      const raw = e.target.value;
-                      if (raw === '') {
-                        setIsiPerBox('');
-                        return;
-                      }
-                      const parsed = parseInt(raw, 10);
-                      if (!isNaN(parsed)) {
-                        handleIsiPerBoxChange(Math.max(1, parsed));
-                      }
-                    }}
-                    onBlur={() => {
-                      if (isiPerBox === '' || isiPerBox < 1) {
-                        setIsiPerBox(getDefaultIsiPerBox(activeItem));
-                      }
-                    }}
-                    className="w-full min-w-0 text-center bg-transparent font-mono font-extrabold text-sm text-[#131b2e] dark:text-white focus:outline-none tabular-nums"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => handleIsiPerBoxChange(safeIsi + 1)}
-                    className="w-7 h-9 rounded bg-[#eaedff] dark:bg-slate-800 hover:bg-[#dae2fd] dark:hover:bg-slate-700 flex items-center justify-center text-[#004ac6] dark:text-blue-400 active:scale-90 transition-transform shrink-0"
-                    aria-label="Tambah isi per box"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                  </button>
+
+                {/* Isi/RTG·Pack */}
+                <div className="bg-[#f2f3ff] dark:bg-slate-800/80 p-2 rounded-lg flex flex-col justify-between">
+                  <div className="text-center mb-1.5">
+                    <span className="text-[11px] font-bold text-[#434655] dark:text-slate-200 block">
+                      Isi/RTG·Pack
+                    </span>
+                    <span className="text-[10px] text-[#737686] dark:text-slate-400 block">
+                      {activeItem.isiPerPack && activeItem.isiPerPack > 0 ? 'Pcs/RTG·Pack ✓' : 'Pcs/RTG·Pack'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-1 bg-white dark:bg-slate-900 rounded-md p-1 shadow-xs">
+                    <button
+                      type="button"
+                      onClick={() => handleIsiPerPackChange(Math.max(1, safeIsiPack - 1))}
+                      className="w-8 h-9 rounded bg-[#eaedff] dark:bg-slate-800 hover:bg-[#dae2fd] dark:hover:bg-slate-700 flex items-center justify-center text-[#131b2e] dark:text-white active:scale-90 transition-transform shrink-0"
+                      aria-label="Kurangi isi per RTG atau pack"
+                    >
+                      <Minus className="w-3.5 h-3.5" />
+                    </button>
+                    <input
+                      type="number"
+                      min="1"
+                      value={isiPerPack}
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        if (raw === '') {
+                          isiPackTouchedRef.current = true;
+                          setIsiPerPack('');
+                          return;
+                        }
+                        const parsed = parseInt(raw, 10);
+                        if (!isNaN(parsed)) {
+                          handleIsiPerPackChange(Math.max(1, parsed));
+                        }
+                      }}
+                      onBlur={() => {
+                        if (isiPerPack === '' || isiPerPack < 1) {
+                          setIsiPerPack(getDefaultIsiPerPack(activeItem));
+                        }
+                      }}
+                      className="w-full min-w-0 text-center bg-transparent font-mono font-extrabold text-sm text-[#131b2e] dark:text-white focus:outline-none tabular-nums"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleIsiPerPackChange(safeIsiPack + 1)}
+                      className="w-8 h-9 rounded bg-[#eaedff] dark:bg-slate-800 hover:bg-[#dae2fd] dark:hover:bg-slate-700 flex items-center justify-center text-[#004ac6] dark:text-blue-400 active:scale-90 transition-transform shrink-0"
+                      aria-label="Tambah isi per RTG atau pack"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
               </div>
 
-              {/* Column 3: Ecer Lepas */}
-              <div className="bg-[#f2f3ff] dark:bg-slate-800/80 p-2 rounded-lg flex flex-col justify-between">
-                <div className="text-center mb-1.5">
+              {/* Row 3: Ecer Lepas (Full-Width Bar) */}
+              <div className="bg-[#f2f3ff] dark:bg-slate-800/80 p-2 rounded-lg flex items-center justify-between gap-2.5">
+                <div className="pl-1 shrink-0">
                   <span className="text-[11px] font-bold text-[#434655] dark:text-slate-200 block">
                     Ecer Lepas
                   </span>
                   <span className="text-[10px] text-[#737686] dark:text-slate-400 block">Pcs Display</span>
                 </div>
-                <div className="flex items-center justify-between gap-1 bg-white dark:bg-slate-900 rounded-md p-1 shadow-xs">
+                <div className="flex items-center justify-between gap-1 bg-white dark:bg-slate-900 rounded-md p-1 shadow-xs w-40 sm:w-48 shrink-0">
                   <button
                     type="button"
                     onClick={() => setEcerLepas((v) => Math.max(0, v - 1))}
-                    className="w-7 h-9 rounded bg-[#eaedff] dark:bg-slate-800 hover:bg-[#dae2fd] dark:hover:bg-slate-700 flex items-center justify-center text-[#131b2e] dark:text-white active:scale-90 transition-transform shrink-0"
+                    className="w-8 h-9 rounded bg-[#eaedff] dark:bg-slate-800 hover:bg-[#dae2fd] dark:hover:bg-slate-700 flex items-center justify-center text-[#131b2e] dark:text-white active:scale-90 transition-transform shrink-0"
                     aria-label="Kurangi eceran"
                   >
                     <Minus className="w-3.5 h-3.5" />
@@ -750,7 +909,7 @@ export const MobileOpnameWorkspace: React.FC<MobileOpnameWorkspaceProps> = ({
                   <button
                     type="button"
                     onClick={() => setEcerLepas((v) => v + 1)}
-                    className="w-7 h-9 rounded bg-[#eaedff] dark:bg-slate-800 hover:bg-[#dae2fd] dark:hover:bg-slate-700 flex items-center justify-center text-[#004ac6] dark:text-blue-400 active:scale-90 transition-transform shrink-0"
+                    className="w-8 h-9 rounded bg-[#eaedff] dark:bg-slate-800 hover:bg-[#dae2fd] dark:hover:bg-slate-700 flex items-center justify-center text-[#004ac6] dark:text-blue-400 active:scale-90 transition-transform shrink-0"
                     aria-label="Tambah eceran"
                   >
                     <Plus className="w-3.5 h-3.5" />
@@ -765,7 +924,9 @@ export const MobileOpnameWorkspace: React.FC<MobileOpnameWorkspaceProps> = ({
                 <div className="text-[11px] font-mono text-[#434655] dark:text-slate-400">
                   Formula:{' '}
                   <span className="font-bold text-[#131b2e] dark:text-white">
-                    ({safeBox} × {safeIsi}) + {safeEcer}
+                    {safePack > 0
+                      ? `(${safeBox} × ${safeIsi}) + (${safePack} × ${safeIsiPack}) + ${safeEcer}`
+                      : `(${safeBox} × ${safeIsi}) + ${safeEcer}`}
                   </span>
                 </div>
                 <div className="text-xs font-bold text-[#131b2e] dark:text-white mt-0.5">

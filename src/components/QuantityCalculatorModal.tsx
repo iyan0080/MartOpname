@@ -14,8 +14,14 @@ interface QuantityCalculatorModalProps {
   onClose: () => void;
   targetItem?: InventoryItem | null;
   items?: InventoryItem[];
-  onApplyQuantity: (itemId: string, quantity: number, notes?: string, isiPerDus?: number) => Promise<boolean>;
-  onSelectResult?: (quantity: number, isiPerDus?: number) => void;
+  onApplyQuantity: (
+    itemId: string,
+    quantity: number,
+    notes?: string,
+    isiPerDus?: number,
+    isiPerPack?: number
+  ) => Promise<boolean>;
+  onSelectResult?: (quantity: number, isiPerDus?: number, isiPerPack?: number) => void;
 }
 
 export const QuantityCalculatorModal: React.FC<QuantityCalculatorModalProps> = ({
@@ -38,6 +44,11 @@ export const QuantityCalculatorModal: React.FC<QuantityCalculatorModalProps> = (
   const [boxCount, setBoxCount] = useState<number | ''>(1);
   const [itemsPerBox, setItemsPerBox] = useState<number | ''>('');
   const [savedIsiPerDus, setSavedIsiPerDus] = useState<number | undefined>(undefined);
+
+  // Controlled RTG/Pack multiplier state (Pengisian Isi Per RTG/Pack)
+  const [packCount, setPackCount] = useState<number | ''>(1);
+  const [itemsPerPack, setItemsPerPack] = useState<number | ''>('');
+  const [savedIsiPerPack, setSavedIsiPerPack] = useState<number | undefined>(undefined);
 
   // Grid / Shelf counter state (baris x kedalaman/tumpukan + sisa)
   const [gridFacing, setGridFacing] = useState<number | ''>(4);
@@ -63,14 +74,25 @@ export const QuantityCalculatorModal: React.FC<QuantityCalculatorModalProps> = (
         setItemsPerBox('');
         setSavedIsiPerDus(undefined);
       }
+      if (targetItem.isiPerPack && targetItem.isiPerPack > 0) {
+        const cleanIsiPack = Math.max(1, Math.round(targetItem.isiPerPack));
+        setItemsPerPack(cleanIsiPack);
+        setSavedIsiPerPack(cleanIsiPack);
+      } else {
+        setItemsPerPack('');
+        setSavedIsiPerPack(undefined);
+      }
     } else {
       setSelectedItemId('');
       setDisplayExp('0');
       setCalcResult(0);
       setItemsPerBox('');
       setSavedIsiPerDus(undefined);
+      setItemsPerPack('');
+      setSavedIsiPerPack(undefined);
     }
     setBoxCount(1);
+    setPackCount(1);
     setCalcMode('standard');
     setSelectionError(null);
   }, [targetItem, isOpen]);
@@ -180,14 +202,37 @@ export const QuantityCalculatorModal: React.FC<QuantityCalculatorModalProps> = (
       ? boxCount * itemsPerBox
       : 0;
 
+  const handleAddPackInput = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const p = typeof packCount === 'number' ? packCount : 0;
+    const isi = typeof itemsPerPack === 'number' ? itemsPerPack : 0;
+    if (p > 0 && isi > 0) {
+      const cleanIsiPack = Math.max(1, Math.round(isi));
+      addPackMultiplier(`${p} RTG/Pack × ${cleanIsiPack} pcs`, p * cleanIsiPack);
+      setSavedIsiPerPack(cleanIsiPack);
+      setPackCount(1);
+      setItemsPerPack(cleanIsiPack);
+    }
+  };
+
+  const packSubtotal =
+    typeof packCount === 'number' && typeof itemsPerPack === 'number' && packCount > 0 && itemsPerPack > 0
+      ? packCount * itemsPerPack
+      : 0;
+
   const handleApply = async () => {
     const resolvedIsi =
       typeof itemsPerBox === 'number' && itemsPerBox > 0
         ? Math.max(1, Math.round(itemsPerBox))
         : savedIsiPerDus;
 
+    const resolvedIsiPack =
+      typeof itemsPerPack === 'number' && itemsPerPack > 0
+        ? Math.max(1, Math.round(itemsPerPack))
+        : savedIsiPerPack;
+
     if (onSelectResult) {
-      onSelectResult(calcResult, resolvedIsi);
+      onSelectResult(calcResult, resolvedIsi, resolvedIsiPack);
       onClose();
       return;
     }
@@ -204,7 +249,8 @@ export const QuantityCalculatorModal: React.FC<QuantityCalculatorModalProps> = (
       currentTargetId,
       calcResult,
       `Dihitung via kalkulator: ${displayExp} = ${calcResult} pcs`,
-      resolvedIsi
+      resolvedIsi,
+      resolvedIsiPack
     );
     setIsApplying(false);
 
@@ -273,13 +319,23 @@ export const QuantityCalculatorModal: React.FC<QuantityCalculatorModalProps> = (
                         setItemsPerBox('');
                         setSavedIsiPerDus(undefined);
                       }
+                      if (item.isiPerPack && item.isiPerPack > 0) {
+                        const cleanIsiPack = Math.max(1, Math.round(item.isiPerPack));
+                        setItemsPerPack(cleanIsiPack);
+                        setSavedIsiPerPack(cleanIsiPack);
+                      } else {
+                        setItemsPerPack('');
+                        setSavedIsiPerPack(undefined);
+                      }
                       setItemSearch('');
                     }}
                     className="w-full px-2.5 py-1.5 text-left text-xs hover:bg-slate-50 dark:hover:bg-slate-700/60 flex items-center justify-between"
                   >
                     <span className="font-medium text-slate-800 dark:text-slate-200 truncate">{item.namaBarang}</span>
                     <span className="font-mono text-[11px] text-slate-500 dark:text-slate-400 shrink-0 ml-2">
-                      {item.sku}{item.isiPerDus ? ` · ${item.isiPerDus}/dus` : ''}
+                      {item.sku}
+                      {item.isiPerDus ? ` · ${item.isiPerDus}/dus` : ''}
+                      {item.isiPerPack ? ` · ${item.isiPerPack}/rtg` : ''}
                     </span>
                   </button>
                 ))}
@@ -403,6 +459,78 @@ export const QuantityCalculatorModal: React.FC<QuantityCalculatorModalProps> = (
                       type="submit"
                       disabled={boxSubtotal <= 0}
                       className="w-full py-1.5 px-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition-colors shadow-2xs"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Tambah</span>
+                    </button>
+                  </div>
+                </div>
+              </form>
+
+              {/* Pengisian Isi Per RTG / Pack */}
+              <form
+                onSubmit={handleAddPackInput}
+                className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2.5"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                    <Layers className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                    Pengisian Isi Per RTG / Pack
+                  </span>
+                  <div className="flex items-center gap-2">
+                    {selectedItemObj?.isiPerPack && selectedItemObj.isiPerPack > 0 && (
+                      <span className="text-[10px] font-mono font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-950/70 px-1.5 py-0.5 rounded">
+                        Tersimpan: {selectedItemObj.isiPerPack}/rtg
+                      </span>
+                    )}
+                    {packSubtotal > 0 && (
+                      <span className="text-xs font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                        = {packSubtotal} pcs
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-12 gap-2 items-end">
+                  <div className="col-span-4">
+                    <label className="block text-[11px] text-slate-500 dark:text-slate-400 mb-1">
+                      Jumlah RTG/Pack
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={packCount}
+                      onChange={(e) =>
+                        setPackCount(e.target.value === '' ? '' : Math.max(0, parseInt(e.target.value, 10) || 0))
+                      }
+                      placeholder="1"
+                      className="w-full px-2.5 py-1.5 text-xs border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-mono font-bold text-center focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
+                    />
+                  </div>
+                  <div className="col-span-4">
+                    <label className="block text-[11px] text-slate-500 dark:text-slate-400 mb-1">
+                      Isi Per RTG/Pack
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={itemsPerPack}
+                      onChange={(e) => {
+                        const val = e.target.value === '' ? '' : Math.max(1, parseInt(e.target.value, 10) || 1);
+                        setItemsPerPack(val);
+                        if (typeof val === 'number' && val > 0) {
+                          setSavedIsiPerPack(val);
+                        }
+                      }}
+                      placeholder="Misal: 10"
+                      className="w-full px-2.5 py-1.5 text-xs border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-mono font-bold text-center focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
+                    />
+                  </div>
+                  <div className="col-span-4">
+                    <button
+                      type="submit"
+                      disabled={packSubtotal <= 0}
+                      className="w-full py-1.5 px-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition-colors shadow-2xs"
                     >
                       <Plus className="w-3.5 h-3.5" />
                       <span>Tambah</span>

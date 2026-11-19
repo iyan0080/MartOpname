@@ -96,6 +96,7 @@ export function exportInventoryToXLSX(items: InventoryItem[], stats?: InventoryS
     'Kategori',
     'Satuan',
     'Isi / Dus',
+    'Isi / RTG-Pack',
     'Stok Fisik (Opname)',
     'Stok Sistem (Awal)',
     'Selisih (Fisik - Sistem)',
@@ -126,6 +127,7 @@ export function exportInventoryToXLSX(items: InventoryItem[], stats?: InventoryS
       item.kategori || 'Umum',
       item.satuan || 'pcs',
       item.isiPerDus && item.isiPerDus > 0 ? item.isiPerDus : '-',
+      item.isiPerPack && item.isiPerPack > 0 ? item.isiPerPack : '-',
       qty,
       sysQty,
       diff,
@@ -156,6 +158,7 @@ export function exportInventoryToXLSX(items: InventoryItem[], stats?: InventoryS
     '',
     '',
     '',
+    '',
     totalQty,
     totalSys,
     totalQty - totalSys,
@@ -178,6 +181,7 @@ export function exportInventoryToXLSX(items: InventoryItem[], stats?: InventoryS
     { wch: 18 },
     { wch: 10 },
     { wch: 10 },
+    { wch: 14 },
     { wch: 14 },
     { wch: 14 },
     { wch: 14 },
@@ -572,7 +576,7 @@ export async function parseExcelFile(
           // 11. catatan
           const catatan = normalized['CATATAN'] || normalized['KETERANGAN'] || normalized['NOTES'] || '';
 
-          // Optional: isi per dus
+          // Optional: isi per dus & isi per RTG/Pack
           const rawIsiPerDus = parseExcelNumber(
             normalized['ISIPERDUS'] ??
               normalized['ISIDUS'] ??
@@ -581,6 +585,18 @@ export async function parseExcelFile(
               normalized['PCSDUS'] ??
               normalized['PCSPERDUS'] ??
               normalized['PCSBOX'],
+            0
+          );
+          const rawIsiPerPack = parseExcelNumber(
+            normalized['ISIPERRTG'] ??
+              normalized['ISIRTG'] ??
+              normalized['ISIPERPACK'] ??
+              normalized['ISIPACK'] ??
+              normalized['ISIRENTENG'] ??
+              normalized['ISIPERRTGPACK'] ??
+              normalized['PCSRTG'] ??
+              normalized['PCSPACK'] ??
+              normalized['PCSPERRTG'],
             0
           );
 
@@ -600,6 +616,7 @@ export async function parseExcelFile(
             kategori: String(kategori).trim() || 'Umum',
             satuan,
             ...(rawIsiPerDus > 0 ? { isiPerDus: Math.max(1, Math.round(rawIsiPerDus)) } : {}),
+            ...(rawIsiPerPack > 0 ? { isiPerPack: Math.max(1, Math.round(rawIsiPerPack)) } : {}),
             hargaModal: Math.max(0, isNaN(modal) ? 0 : modal),
             hargaJual: Math.max(0, isNaN(jual) ? 0 : jual),
             stokAwal: Math.max(0, isNaN(stokAwal) ? 0 : stokAwal),

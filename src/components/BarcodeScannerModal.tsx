@@ -29,7 +29,13 @@ interface BarcodeScannerModalProps {
     barcode: string,
     mode: 'calculator' | 'increment'
   ) => Promise<{ success: boolean; item?: InventoryItem; notFound?: boolean }>;
-  onApplyCalculatedQty?: (itemId: string, newQuantity: number, notes?: string, isiPerDus?: number) => Promise<boolean>;
+  onApplyCalculatedQty?: (
+    itemId: string,
+    newQuantity: number,
+    notes?: string,
+    isiPerDus?: number,
+    isiPerPack?: number
+  ) => Promise<boolean>;
   onOpenManualAdd: (barcode: string) => void;
   onOpenFullCalculator?: (item: InventoryItem) => void;
 }
@@ -58,6 +64,8 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   // Inline calculator state
   const [dusCount, setDusCount] = useState<number | ''>('');
   const [isiPerDus, setIsiPerDus] = useState<number | ''>(24);
+  const [packCount, setPackCount] = useState<number | ''>('');
+  const [isiPerPack, setIsiPerPack] = useState<number | ''>('');
   const [pcsExtra, setPcsExtra] = useState<number | ''>('');
   const [manualCalcQty, setManualCalcQty] = useState<number | ''>('');
   const [isSavingQty, setIsSavingQty] = useState(false);
@@ -89,12 +97,14 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     }
     const d = typeof dusCount === 'number' ? dusCount : 0;
     const isi = typeof isiPerDus === 'number' ? isiPerDus : 0;
+    const p = typeof packCount === 'number' ? packCount : 0;
+    const isiPack = typeof isiPerPack === 'number' ? isiPerPack : 0;
     const extra = typeof pcsExtra === 'number' ? pcsExtra : 0;
-    const total = d * isi + extra;
+    const total = d * isi + p * isiPack + extra;
     return Math.max(0, total);
-  }, [dusCount, isiPerDus, pcsExtra, manualCalcQty]);
+  }, [dusCount, isiPerDus, packCount, isiPerPack, pcsExtra, manualCalcQty]);
 
-  // Reset states when item changes (prioritizing saved isiPerDus)
+  // Reset states when item changes (prioritizing saved isiPerDus and isiPerPack)
   useEffect(() => {
     if (activeItem) {
       if (activeItem.isiPerDus && activeItem.isiPerDus > 0) {
@@ -111,7 +121,13 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
           setIsiPerDus(24);
         }
       }
+      if (activeItem.isiPerPack && activeItem.isiPerPack > 0) {
+        setIsiPerPack(Math.max(1, Math.round(activeItem.isiPerPack)));
+      } else {
+        setIsiPerPack('');
+      }
       setDusCount('');
+      setPackCount('');
       setPcsExtra('');
       setManualCalcQty(activeItem.quantity || '');
     }
@@ -398,12 +414,34 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
         ? Math.max(1, Math.round(isiPerDus))
         : undefined;
 
-    let note = `Kalkulator: ${calculatedTotal} pcs`;
+    const validIsiPerPack =
+      typeof isiPerPack === 'number' && isiPerPack > 0
+        ? Math.max(1, Math.round(isiPerPack))
+        : undefined;
+
+    const parts: string[] = [];
     if (typeof dusCount === 'number' && dusCount > 0) {
-      note = `Kalkulator: ${dusCount} dus × ${isiPerDus} + ${pcsExtra || 0} pcs = ${calculatedTotal} pcs`;
+      parts.push(`${dusCount} dus × ${isiPerDus || 0}`);
+    }
+    if (typeof packCount === 'number' && packCount > 0) {
+      parts.push(`${packCount} rtg/pack × ${isiPerPack || 0}`);
+    }
+    if ((typeof pcsExtra === 'number' && pcsExtra > 0) || parts.length > 0) {
+      parts.push(`${pcsExtra || 0} pcs`);
     }
 
-    const success = await onApplyCalculatedQty(activeItem.id, calculatedTotal, note, validIsiPerDus);
+    const note =
+      parts.length > 0
+        ? `Kalkulator: ${parts.join(' + ')} = ${calculatedTotal} pcs`
+        : `Kalkulator: ${calculatedTotal} pcs`;
+
+    const success = await onApplyCalculatedQty(
+      activeItem.id,
+      calculatedTotal,
+      note,
+      validIsiPerDus,
+      validIsiPerPack
+    );
     setIsSavingQty(false);
 
     if (success) {
@@ -412,6 +450,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
         ...activeItem,
         quantity: calculatedTotal,
         ...(validIsiPerDus ? { isiPerDus: validIsiPerDus } : {}),
+        ...(validIsiPerPack ? { isiPerPack: validIsiPerPack } : {}),
       });
       setScanStatus('success');
       setTimeout(() => {
@@ -686,19 +725,20 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
                 )}
               </div>
 
-              {/* Calculator Inputs: Dus x Isi + Satuan */}
+              {/* Calculator Inputs: Dus + RTG/Pack + Satuan */}
               <div className="bg-white dark:bg-slate-800/90 p-3 rounded-lg border border-blue-200 dark:border-blue-900 shadow-xs space-y-2.5">
                 <div className="flex items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-200">
                   <span className="flex items-center gap-1">
                     <Package className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-                    Hitung Jumlah Barang (Dus × Isi + Satuan):
+                    Hitung (Dus + RTG/Pack + Satuan):
                   </span>
                   <span className="font-mono text-blue-600 dark:text-blue-400">
                     = {calculatedTotal} pcs
                   </span>
                 </div>
 
-                <div className="grid grid-cols-3 gap-2">
+                {/* Row 1: Dus */}
+                <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label className="block text-[11px] text-slate-500 dark:text-slate-400 mb-1">
                       Karton / Dus
@@ -733,6 +773,46 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
                       }}
                       placeholder="24"
                       className="w-full px-2.5 py-1.5 text-xs font-mono font-bold bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-md text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Row 2: RTG/Pack & Satuan */}
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="block text-[11px] text-slate-500 dark:text-slate-400 mb-1">
+                      Jml RTG / Pack
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={packCount}
+                      onChange={(e) => {
+                        setManualCalcQty('');
+                        setPackCount(e.target.value === '' ? '' : Math.max(0, parseInt(e.target.value) || 0));
+                      }}
+                      placeholder="0 rtg"
+                      className="w-full px-2.5 py-1.5 text-xs font-mono font-bold bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-md text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 mb-1 gap-1">
+                      <span className="truncate">Isi RTG/Pack</span>
+                      {activeItem.isiPerPack && activeItem.isiPerPack > 0 && (
+                        <span className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400 shrink-0">✓</span>
+                      )}
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={isiPerPack}
+                      onChange={(e) => {
+                        setManualCalcQty('');
+                        setIsiPerPack(e.target.value === '' ? '' : Math.max(1, parseInt(e.target.value) || 1));
+                      }}
+                      placeholder="10"
+                      className="w-full px-2.5 py-1.5 text-xs font-mono font-bold bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-md text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500"
                     />
                   </div>
 
@@ -770,6 +850,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
                     type="button"
                     onClick={() => {
                       setDusCount('');
+                      setPackCount('');
                       setPcsExtra('');
                       setManualCalcQty(0);
                     }}

@@ -33,6 +33,7 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
   const [customCategoryName, setCustomCategoryName] = useState('');
   const [satuan, setSatuan] = useState('pcs');
   const [isiPerDus, setIsiPerDus] = useState<number | ''>('');
+  const [isiPerPack, setIsiPerPack] = useState<number | ''>('');
   const [quantity, setQuantity] = useState<number | ''>(0);
   const [quantitySystem, setQuantitySystem] = useState<number | ''>(0);
   const [hargaModal, setHargaModal] = useState<number | ''>(0);
@@ -90,6 +91,7 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
       setCustomCategoryName('');
       setSatuan(initialData.satuan || 'pcs');
       setIsiPerDus(initialData.isiPerDus && initialData.isiPerDus > 0 ? initialData.isiPerDus : '');
+      setIsiPerPack(initialData.isiPerPack && initialData.isiPerPack > 0 ? initialData.isiPerPack : '');
       setQuantity(initialData.quantity !== undefined ? initialData.quantity : 0);
       setQuantitySystem(initialData.quantitySystem !== undefined ? initialData.quantitySystem : 0);
       setHargaModal(initialData.hargaModal !== undefined ? initialData.hargaModal : 0);
@@ -107,6 +109,7 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
       setCustomCategoryName('');
       setSatuan('pcs');
       setIsiPerDus('');
+      setIsiPerPack('');
       setQuantity(1);
       setQuantitySystem(1);
       setHargaModal(0);
@@ -151,6 +154,11 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
         ? Math.max(1, Math.round(isiPerDus))
         : undefined;
 
+    const validIsiPerPack =
+      typeof isiPerPack === 'number' && isiPerPack > 0
+        ? Math.max(1, Math.round(isiPerPack))
+        : undefined;
+
     const success = await onSave({
       id: initialData?.id,
       sku: sku.trim().toUpperCase(),
@@ -159,6 +167,7 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
       kategori: finalCategory,
       satuan: satuan.trim() || 'pcs',
       ...(validIsiPerDus !== undefined ? { isiPerDus: validIsiPerDus } : {}),
+      ...(validIsiPerPack !== undefined ? { isiPerPack: validIsiPerPack } : {}),
       quantity: Math.max(0, numQty),
       quantitySystem: Math.max(0, numSysQty),
       stokAwal: Math.max(0, numSysQty),
@@ -466,8 +475,8 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
               </div>
             </div>
 
-            {/* Isi Per Dus, Stok Minimum & Status Produk */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {/* Isi Per Dus & Isi Per RTG/Pack */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                   Isi Per Dus ({satuan}/dus)
@@ -485,6 +494,26 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">Otomatis dipakai kalkulator dus</p>
               </div>
 
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Isi Per RTG / Pack ({satuan}/rtg)
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  value={isiPerPack}
+                  onChange={(e) =>
+                    setIsiPerPack(e.target.value === '' ? '' : Math.max(1, parseInt(e.target.value, 10) || 1))
+                  }
+                  placeholder="Contoh: 10"
+                  className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-emerald-500 font-mono font-semibold"
+                />
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">Otomatis dipakai kalkulator RTG/Pack</p>
+              </div>
+            </div>
+
+            {/* Stok Minimum & Status Produk */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                   Stok Minimum (Restock)
@@ -570,6 +599,7 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
             ? {
                 ...initialData,
                 ...(typeof isiPerDus === 'number' && isiPerDus > 0 ? { isiPerDus } : {}),
+                ...(typeof isiPerPack === 'number' && isiPerPack > 0 ? { isiPerPack } : {}),
               }
             : {
                 id: 'draft',
@@ -578,6 +608,7 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
                 barcode,
                 kategori,
                 ...(typeof isiPerDus === 'number' && isiPerDus > 0 ? { isiPerDus } : {}),
+                ...(typeof isiPerPack === 'number' && isiPerPack > 0 ? { isiPerPack } : {}),
                 quantity: numQty,
                 quantitySystem: numSysQty,
                 hargaModal: numModal,
@@ -586,17 +617,23 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
                 updatedAt: '',
               }
         }
-        onSelectResult={(res, resIsi) => {
+        onSelectResult={(res, resIsi, resIsiPack) => {
           setQuantity(res);
           if (resIsi && resIsi > 0) {
             setIsiPerDus(resIsi);
           }
+          if (resIsiPack && resIsiPack > 0) {
+            setIsiPerPack(resIsiPack);
+          }
           setIsCalcOpen(false);
         }}
-        onApplyQuantity={async (_id, resQty, _notes, resIsi) => {
+        onApplyQuantity={async (_id, resQty, _notes, resIsi, resIsiPack) => {
           setQuantity(resQty);
           if (resIsi && resIsi > 0) {
             setIsiPerDus(resIsi);
+          }
+          if (resIsiPack && resIsiPack > 0) {
+            setIsiPerPack(resIsiPack);
           }
           setIsCalcOpen(false);
           return true;

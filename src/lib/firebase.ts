@@ -145,6 +145,10 @@ export async function saveItemToFirestore(item: InventoryItem): Promise<void> {
       item.isiPerDus !== undefined && item.isiPerDus !== null && Number(item.isiPerDus) > 0
         ? Math.max(1, Math.round(Number(item.isiPerDus)))
         : undefined;
+    const validIsiPerPack =
+      item.isiPerPack !== undefined && item.isiPerPack !== null && Number(item.isiPerPack) > 0
+        ? Math.max(1, Math.round(Number(item.isiPerPack)))
+        : undefined;
     const sanitized = sanitizeForFirestore({
       ...item,
       sku: (item.sku || '').trim().toUpperCase(),
@@ -153,6 +157,7 @@ export async function saveItemToFirestore(item: InventoryItem): Promise<void> {
       kategori: (item.kategori || 'Umum').trim(),
       satuan: (item.satuan || 'pcs').trim(),
       isiPerDus: validIsiPerDus,
+      isiPerPack: validIsiPerPack,
       quantity: Math.max(0, Number(item.quantity) || 0),
       quantitySystem: Math.max(0, Number(item.quantitySystem) || 0),
       stokAwal: Math.max(0, Number(item.stokAwal !== undefined ? item.stokAwal : item.quantitySystem) || 0),
@@ -205,6 +210,10 @@ export async function batchSaveItemsToFirestore(items: InventoryItem[]): Promise
           item.isiPerDus !== undefined && item.isiPerDus !== null && Number(item.isiPerDus) > 0
             ? Math.max(1, Math.round(Number(item.isiPerDus)))
             : undefined;
+        const validIsiPerPack =
+          item.isiPerPack !== undefined && item.isiPerPack !== null && Number(item.isiPerPack) > 0
+            ? Math.max(1, Math.round(Number(item.isiPerPack)))
+            : undefined;
         const sanitized = sanitizeForFirestore({
           ...item,
           sku: (item.sku || '').trim().toUpperCase(),
@@ -213,6 +222,7 @@ export async function batchSaveItemsToFirestore(items: InventoryItem[]): Promise
           kategori: (item.kategori || 'Umum').trim(),
           satuan: (item.satuan || 'pcs').trim(),
           isiPerDus: validIsiPerDus,
+          isiPerPack: validIsiPerPack,
           quantity: Math.max(0, Number(item.quantity) || 0),
           quantitySystem: Math.max(0, Number(item.quantitySystem) || 0),
           stokAwal: Math.max(0, Number(item.stokAwal !== undefined ? item.stokAwal : item.quantitySystem) || 0),

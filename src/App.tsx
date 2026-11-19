@@ -920,6 +920,10 @@ export default function App() {
           itemData.isiPerDus !== undefined && Number(itemData.isiPerDus) > 0
             ? Math.max(1, Math.round(Number(itemData.isiPerDus)))
             : existing?.isiPerDus;
+        const resolvedIsiPerPack =
+          itemData.isiPerPack !== undefined && Number(itemData.isiPerPack) > 0
+            ? Math.max(1, Math.round(Number(itemData.isiPerPack)))
+            : existing?.isiPerPack;
 
         const updatedItem: InventoryItem = {
           id: itemData.id,
@@ -929,6 +933,7 @@ export default function App() {
           kategori: itemData.kategori || existing?.kategori || 'Umum',
           satuan: itemData.satuan || existing?.satuan || 'pcs',
           ...(resolvedIsiPerDus !== undefined ? { isiPerDus: resolvedIsiPerDus } : {}),
+          ...(resolvedIsiPerPack !== undefined ? { isiPerPack: resolvedIsiPerPack } : {}),
           quantity: newQty,
           quantitySystem: itemData.quantitySystem !== undefined ? Number(itemData.quantitySystem) : (existing?.quantitySystem || 0),
           stokAwal: itemData.stokAwal !== undefined ? Number(itemData.stokAwal) : (existing?.stokAwal ?? existing?.quantitySystem ?? 0),
@@ -971,6 +976,10 @@ export default function App() {
           itemData.isiPerDus !== undefined && Number(itemData.isiPerDus) > 0
             ? Math.max(1, Math.round(Number(itemData.isiPerDus)))
             : undefined;
+        const validNewIsiPerPack =
+          itemData.isiPerPack !== undefined && Number(itemData.isiPerPack) > 0
+            ? Math.max(1, Math.round(Number(itemData.isiPerPack)))
+            : undefined;
         const newItem: InventoryItem = {
           id: `item-${Date.now()}`,
           sku: cleanSku,
@@ -979,6 +988,7 @@ export default function App() {
           kategori: itemData.kategori || 'Umum',
           satuan: itemData.satuan || 'pcs',
           ...(validNewIsiPerDus !== undefined ? { isiPerDus: validNewIsiPerDus } : {}),
+          ...(validNewIsiPerPack !== undefined ? { isiPerPack: validNewIsiPerPack } : {}),
           quantity: Math.max(0, Number(itemData.quantity) || 0),
           quantitySystem: Math.max(0, Number(itemData.quantitySystem) || 0),
           stokAwal: itemData.stokAwal !== undefined ? Math.max(0, Number(itemData.stokAwal)) : Math.max(0, Number(itemData.quantitySystem) || 0),
@@ -1063,8 +1073,9 @@ export default function App() {
     }
   };
 
-  // Debounced auto-save for Isi/Box (Quantity per dus) edits directly to Cloud Firestore
+  // Debounced auto-save for Isi/Box (Quantity per dus) & Isi/RTG·Pack edits directly to Cloud Firestore
   const pendingIsiMapRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const pendingIsiPackMapRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   const handleSaveItemIsiPerDus = useCallback(
     (itemId: string, isiPerDus: number) => {
@@ -1113,18 +1124,72 @@ export default function App() {
     [markCloudSaving, markCloudSynced]
   );
 
+  const handleSaveItemIsiPerPack = useCallback(
+    (itemId: string, isiPerPack: number) => {
+      const safeIsiPack = Math.max(1, Math.round(Number(isiPerPack) || 1));
+      const existingTimer = pendingIsiPackMapRef.current.get(itemId);
+      if (existingTimer) {
+        clearTimeout(existingTimer);
+      }
+
+      const currentTarget = itemsRef.current.find((i) => i.id === itemId);
+      if (!currentTarget || (!existingTimer && currentTarget.isiPerPack === safeIsiPack)) return;
+
+      const now = new Date().toISOString();
+      setItems((prev) =>
+        prev.map((i) =>
+          i.id === itemId
+            ? {
+                ...i,
+                isiPerPack: safeIsiPack,
+                updatedAt: now,
+              }
+            : i
+        )
+      );
+
+      const timer = setTimeout(async () => {
+        pendingIsiPackMapRef.current.delete(itemId);
+        const latestItem = itemsRef.current.find((i) => i.id === itemId);
+        if (!latestItem) return;
+        try {
+          markCloudSaving();
+          await saveItemToFirestore({
+            ...latestItem,
+            isiPerPack: safeIsiPack,
+            updatedAt: new Date().toISOString(),
+          });
+          markCloudSynced();
+        } catch (err) {
+          console.error('Error saving isiPerPack:', err);
+          setCloudSyncStatus('error');
+        }
+      }, 420);
+
+      pendingIsiPackMapRef.current.set(itemId, timer);
+    },
+    [markCloudSaving, markCloudSynced]
+  );
+
   // Save Quick Adjust dialog directly to Firebase Cloud
   const handleSaveQuickAdjust = async (
     itemId: string,
     newQuantity: number,
     notes?: string,
-    isiPerDus?: number
+    isiPerDus?: number,
+    isiPerPack?: number
   ): Promise<boolean> => {
     try {
       const pendingIsiTimer = pendingIsiMapRef.current.get(itemId);
       if (pendingIsiTimer) {
         clearTimeout(pendingIsiTimer);
         pendingIsiMapRef.current.delete(itemId);
+      }
+
+      const pendingIsiPackTimer = pendingIsiPackMapRef.current.get(itemId);
+      if (pendingIsiPackTimer) {
+        clearTimeout(pendingIsiPackTimer);
+        pendingIsiPackMapRef.current.delete(itemId);
       }
 
       const target = items.find((i) => i.id === itemId);
@@ -1135,10 +1200,16 @@ export default function App() {
           ? Math.max(1, Math.round(Number(isiPerDus)))
           : target.isiPerDus;
 
+      const resolvedIsiPerPack =
+        isiPerPack !== undefined && Number(isiPerPack) > 0
+          ? Math.max(1, Math.round(Number(isiPerPack)))
+          : target.isiPerPack;
+
       const prevQty = target.quantity || 0;
       const updatedItem: InventoryItem = {
         ...target,
         ...(resolvedIsiPerDus !== undefined ? { isiPerDus: resolvedIsiPerDus } : {}),
+        ...(resolvedIsiPerPack !== undefined ? { isiPerPack: resolvedIsiPerPack } : {}),
         quantity: Math.max(0, newQuantity),
         lastUpdatedBy: activeUser,
         updatedAt: new Date().toISOString(),
@@ -1236,6 +1307,9 @@ export default function App() {
           ...(raw.isiPerDus && Number(raw.isiPerDus) > 0
             ? { isiPerDus: Math.max(1, Math.round(Number(raw.isiPerDus))) }
             : {}),
+          ...(raw.isiPerPack && Number(raw.isiPerPack) > 0
+            ? { isiPerPack: Math.max(1, Math.round(Number(raw.isiPerPack))) }
+            : {}),
           quantity: Math.max(0, Number(raw.quantity !== undefined ? raw.quantity : raw.stokAwal) || 0),
           quantitySystem: Math.max(0, Number(raw.quantitySystem !== undefined ? raw.quantitySystem : (raw.stokAwal !== undefined ? raw.stokAwal : raw.quantity)) || 0),
           stokAwal: Math.max(0, Number(raw.stokAwal !== undefined ? raw.stokAwal : raw.quantitySystem) || 0),
@@ -1267,12 +1341,17 @@ export default function App() {
               raw.isiPerDus && Number(raw.isiPerDus) > 0
                 ? Math.max(1, Math.round(Number(raw.isiPerDus)))
                 : existing.isiPerDus;
+            const mergedIsiPerPack =
+              raw.isiPerPack && Number(raw.isiPerPack) > 0
+                ? Math.max(1, Math.round(Number(raw.isiPerPack)))
+                : existing.isiPerPack;
             updatedList[existingIndex] = {
               ...existing,
               namaBarang: raw.namaBarang ? String(raw.namaBarang).trim() : existing.namaBarang,
               kategori: raw.kategori ? String(raw.kategori).trim() : existing.kategori,
               satuan: raw.satuan ? String(raw.satuan).trim() : (existing.satuan || 'pcs'),
               ...(mergedIsiPerDus !== undefined ? { isiPerDus: mergedIsiPerDus } : {}),
+              ...(mergedIsiPerPack !== undefined ? { isiPerPack: mergedIsiPerPack } : {}),
               quantity: raw.quantity !== undefined ? Math.max(0, Number(raw.quantity)) : existing.quantity,
               quantitySystem: raw.quantitySystem !== undefined ? Math.max(0, Number(raw.quantitySystem)) : (raw.stokAwal !== undefined ? Math.max(0, Number(raw.stokAwal)) : existing.quantitySystem),
               stokAwal: raw.stokAwal !== undefined ? Math.max(0, Number(raw.stokAwal)) : (existing.stokAwal ?? existing.quantitySystem),
@@ -1297,6 +1376,9 @@ export default function App() {
               satuan: String(raw.satuan || 'pcs').trim(),
               ...(raw.isiPerDus && Number(raw.isiPerDus) > 0
                 ? { isiPerDus: Math.max(1, Math.round(Number(raw.isiPerDus))) }
+                : {}),
+              ...(raw.isiPerPack && Number(raw.isiPerPack) > 0
+                ? { isiPerPack: Math.max(1, Math.round(Number(raw.isiPerPack))) }
                 : {}),
               quantity: Math.max(0, Number(raw.quantity !== undefined ? raw.quantity : raw.stokAwal) || 0),
               quantitySystem: Math.max(0, Number(raw.quantitySystem !== undefined ? raw.quantitySystem : (raw.stokAwal !== undefined ? raw.stokAwal : raw.quantity)) || 0),
@@ -2061,6 +2143,7 @@ export default function App() {
                 onSelectTab={handleSelectViewTab}
                 onSaveCountingAdjust={handleSaveQuickAdjust}
                 onSaveIsiPerDus={handleSaveItemIsiPerDus}
+                onSaveIsiPerPack={handleSaveItemIsiPerPack}
                 onQuickDelta={handleQuickDelta}
                 onQuickAdjust={handleRowQuickAdjust}
                 onOpenCalc={handleRowOpenCalc}
@@ -2094,8 +2177,8 @@ export default function App() {
         onClose={() => setIsScannerOpen(false)}
         items={items}
         onScanResult={handleCameraScanResult}
-        onApplyCalculatedQty={async (itemId, calculatedQty, notes, isiPerDus) => {
-          return await handleSaveQuickAdjust(itemId, calculatedQty, notes, isiPerDus);
+        onApplyCalculatedQty={async (itemId, calculatedQty, notes, isiPerDus, isiPerPack) => {
+          return await handleSaveQuickAdjust(itemId, calculatedQty, notes, isiPerDus, isiPerPack);
         }}
         onOpenManualAdd={(code) => {
           setPrefilledBarcode(code);
@@ -2216,8 +2299,8 @@ export default function App() {
         }}
         targetItem={calcTargetItem}
         items={items}
-        onApplyQuantity={async (itemId, calculatedQty, notes, isiPerDus) => {
-          const success = await handleSaveQuickAdjust(itemId, calculatedQty, notes, isiPerDus);
+        onApplyQuantity={async (itemId, calculatedQty, notes, isiPerDus, isiPerPack) => {
+          const success = await handleSaveQuickAdjust(itemId, calculatedQty, notes, isiPerDus, isiPerPack);
           if (success) {
             setIsGlobalCalcOpen(false);
             setCalcTargetItem(null);

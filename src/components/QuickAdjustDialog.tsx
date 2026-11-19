@@ -13,7 +13,8 @@ interface QuickAdjustDialogProps {
     itemId: string,
     newQuantity: number,
     notes?: string,
-    isiPerDus?: number
+    isiPerDus?: number,
+    isiPerPack?: number
   ) => Promise<boolean>;
 }
 
@@ -27,6 +28,7 @@ export const QuickAdjustDialog: React.FC<QuickAdjustDialogProps> = ({
   const [qty, setQty] = useState<number>(0);
   const [notes, setNotes] = useState('');
   const [isiPerDus, setIsiPerDus] = useState<number | undefined>(undefined);
+  const [isiPerPack, setIsiPerPack] = useState<number | undefined>(undefined);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCalcModalOpen, setIsCalcModalOpen] = useState(false);
 
@@ -35,6 +37,7 @@ export const QuickAdjustDialog: React.FC<QuickAdjustDialogProps> = ({
       setQty(item.quantity);
       setNotes(item.keterangan || '');
       setIsiPerDus(item.isiPerDus && item.isiPerDus > 0 ? item.isiPerDus : undefined);
+      setIsiPerPack(item.isiPerPack && item.isiPerPack > 0 ? item.isiPerPack : undefined);
     }
   }, [item, isOpen]);
 
@@ -48,7 +51,7 @@ export const QuickAdjustDialog: React.FC<QuickAdjustDialogProps> = ({
 
   const handleApply = async () => {
     setIsSubmitting(true);
-    const success = await onSaveAdjust(item.id, qty, notes, isiPerDus);
+    const success = await onSaveAdjust(item.id, qty, notes, isiPerDus, isiPerPack);
     setIsSubmitting(false);
     if (success) {
       onClose();
@@ -240,14 +243,18 @@ export const QuickAdjustDialog: React.FC<QuickAdjustDialogProps> = ({
         targetItem={{
           ...item,
           ...(isiPerDus && isiPerDus > 0 ? { isiPerDus } : {}),
+          ...(isiPerPack && isiPerPack > 0 ? { isiPerPack } : {}),
         }}
-        onApplyQuantity={async (_id, calculatedQty, calcNotes, calcIsiPerDus) => {
+        onApplyQuantity={async (_id, calculatedQty, calcNotes, calcIsiPerDus, calcIsiPerPack) => {
           setQty(calculatedQty);
           if (calcNotes) {
             setNotes(calcNotes);
           }
           if (calcIsiPerDus && calcIsiPerDus > 0) {
             setIsiPerDus(calcIsiPerDus);
+          }
+          if (calcIsiPerPack && calcIsiPerPack > 0) {
+            setIsiPerPack(calcIsiPerPack);
           }
           setIsCalcModalOpen(false);
           return true;
