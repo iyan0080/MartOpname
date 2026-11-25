@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { InventoryItem, InventoryStats } from '../types/inventory.ts';
 import { formatRupiah, formatCompactRupiah } from '../utils/excelUtils.ts';
+import { playScanWarningSound } from '../utils/soundEffects.ts';
 import { MobileInventoryCard } from './InventoryRows.tsx';
 
 interface DuplicateAnalysisSummary {
@@ -180,6 +181,13 @@ export const MobileOpnameWorkspace: React.FC<MobileOpnameWorkspaceProps> = ({
   const [isiPerPack, setIsiPerPack] = useState<number | ''>(10);
   const [ecerLepas, setEcerLepas] = useState<number>(0);
   const [isSavingActive, setIsSavingActive] = useState(false);
+  const [hasEditedCalc, setHasEditedCalc] = useState(false);
+  const [pendingNextTarget, setPendingNextTarget] = useState<
+    | { type: 'switch_item'; item: InventoryItem }
+    | { type: 'open_scanner' }
+    | { type: 'open_calc'; item: InventoryItem }
+    | null
+  >(null);
 
   // Sync box/pack/ecer inputs when activeItem changes or saved isiPerDus/isiPerPack updates from Cloud
   useEffect(() => {
@@ -190,6 +198,8 @@ export const MobileOpnameWorkspace: React.FC<MobileOpnameWorkspaceProps> = ({
     if (activeItem) {
       if (idChanged) {
         isiPackTouchedRef.current = false;
+        setHasEditedCalc(false);
+        setPendingNextTarget(null);
         setJmlBox(0);
         setIsiPerBox(getDefaultIsiPerBox(activeItem));
         setJmlPack(0);
@@ -209,6 +219,8 @@ export const MobileOpnameWorkspace: React.FC<MobileOpnameWorkspaceProps> = ({
       }
     } else {
       isiPackTouchedRef.current = false;
+      setHasEditedCalc(false);
+      setPendingNextTarget(null);
       setJmlBox(0);
       setIsiPerBox(24);
       setJmlPack(0);
@@ -249,8 +261,15 @@ export const MobileOpnameWorkspace: React.FC<MobileOpnameWorkspaceProps> = ({
   const activeSystemQty = activeItem?.quantitySystem || 0;
   const activeDiff = totalCalculated - activeSystemQty;
   const activeSatuan = activeItem?.satuan || 'pcs';
+  const hasUnsavedCalc = Boolean(
+    activeItem &&
+      hasEditedCalc &&
+      (totalCalculated !== (activeItem.quantity || 0) || safeBox > 0 || safePack > 0)
+  );
 
-  const handleFocusCountingCard = (item: InventoryItem) => {
+  const applyFocusCountingCard = (item: InventoryItem) => {
+    setHasEditedCalc(false);
+    setPendingNextTarget(null);
     onSelectCountingItem(item.id);
     isiPackTouchedRef.current = false;
     setJmlBox(0);
@@ -261,6 +280,18 @@ export const MobileOpnameWorkspace: React.FC<MobileOpnameWorkspaceProps> = ({
     if (countingCardRef.current) {
       countingCardRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
+  };
+
+  const handleFocusCountingCard = (item: InventoryItem) => {
+    if (activeItem && item.id !== activeItem.id && hasUnsavedCalc) {
+      playScanWarningSound();
+      setPendingNextTarget({ type: 'switch_item', item });
+      if (countingCardRef.current) {
+        countingCardRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+      return;
+    }
+    applyFocusCountingCard(item);
   };
 
   const handleIsiPerBoxChange = (nextVal: number) => {
@@ -280,8 +311,8 @@ export const MobileOpnameWorkspace: React.FC<MobileOpnameWorkspaceProps> = ({
     }
   };
 
-  const handleSaveAndNext = async () => {
-    if (!activeItem || isSavingActive) return;
+  const saveCurrentActiveOnly = async (): Promise<boolean> => {
+    if (!activeItem || isSavingActive) return false;
     setIsSavingActive(true);
     const parts: string[] = [];
     if (safeBox > 0) parts.push(`(${safeBox} × ${safeIsi} dus)`);
@@ -306,7 +337,16 @@ export const MobileOpnameWorkspace: React.FC<MobileOpnameWorkspaceProps> = ({
       isiPackToSave
     );
     setIsSavingActive(false);
+    if (ok) {
+      setHasEditedCalc(false);
+      setPendingNextTarget(null);
+    }
+    return ok;
+  };
 
+  const handleSaveAndNext = async () => {
+    if (!activeItem || isSavingActive) return;
+    const ok = await saveCurrentActiveOnly();
     if (ok) {
       // Advance to the next item in filteredItems or items
       const pool = filteredItems.length > 0 ? filteredItems : items;
@@ -563,7 +603,17 @@ export const MobileOpnameWorkspace: React.FC<MobileOpnameWorkspaceProps> = ({
           </button>
           <button
             type="button"
-            onClick={onOpenScanner}
+            onClick={() => {
+              if (hasUnsavedCalc) {
+                playScanWarningSound();
+                setPendingNextTarget({ type: 'open_scanner' });
+                if (countingCardRef.current) {
+                  countingCardRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+                return;
+              }
+              onOpenScanner();
+            }}
             className="w-8 h-8 rounded-md bg-[#eaedff] dark:bg-slate-700 flex items-center justify-center text-[#434655] dark:text-slate-200 hover:text-[#004ac6] dark:hover:text-blue-400 active:scale-95 transition-transform shrink-0"
             title="Buka Kamera Scan Barcode & QR Code"
           >
@@ -614,15 +664,27 @@ export const MobileOpnameWorkspace: React.FC<MobileOpnameWorkspaceProps> = ({
         className="bg-white dark:bg-slate-900 rounded-xl shadow-sm p-3 space-y-3 border border-[#c3c6d7]/50 dark:border-slate-800"
       >
         <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 flex-wrap">
             <h2 className="text-sm font-bold text-[#131b2e] dark:text-white">
               Kalkulator Box &amp; Eceran
             </h2>
+            {hasUnsavedCalc && (
+              <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/70 text-amber-800 dark:text-amber-200 text-[10px] font-bold">
+                Belum Disimpan
+              </span>
+            )}
           </div>
           {activeItem && (
             <button
               type="button"
-              onClick={() => onOpenCalc(activeItem)}
+              onClick={() => {
+                if (hasUnsavedCalc) {
+                  playScanWarningSound();
+                  setPendingNextTarget({ type: 'open_calc', item: activeItem });
+                  return;
+                }
+                onOpenCalc(activeItem);
+              }}
               className="text-[11px] font-bold text-[#004ac6] dark:text-blue-400 bg-[#eaedff] dark:bg-slate-800 px-2 py-1 rounded-md flex items-center gap-1 active:scale-95 transition-transform"
               title="Buka kalkulator lengkap (baris rak & aritmatika)"
             >
@@ -631,6 +693,76 @@ export const MobileOpnameWorkspace: React.FC<MobileOpnameWorkspaceProps> = ({
             </button>
           )}
         </div>
+
+        {/* Unsaved Quantity Notification Banner */}
+        {activeItem && pendingNextTarget && (
+          <div className="p-3 bg-amber-50 dark:bg-amber-950/70 border border-amber-300 dark:border-amber-700 rounded-xl space-y-2">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-bold text-amber-950 dark:text-amber-100">
+                  Pemberitahuan: Jumlah Barang Belum Disimpan!
+                </p>
+                <p className="text-[11px] text-amber-800 dark:text-amber-200 mt-0.5 leading-relaxed">
+                  Input untuk <strong>{activeItem.namaBarang}</strong> ({totalCalculated} {activeSatuan}) belum disimpan.{' '}
+                  {pendingNextTarget.type === 'switch_item'
+                    ? `Simpan terlebih dahulu sebelum lanjut ke "${pendingNextTarget.item.namaBarang}"?`
+                    : pendingNextTarget.type === 'open_scanner'
+                    ? 'Simpan terlebih dahulu sebelum membuka kamera scan?'
+                    : 'Simpan terlebih dahulu sebelum membuka Mode Rak?'}
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-1.5">
+              <button
+                type="button"
+                onClick={() => setPendingNextTarget(null)}
+                className="px-2.5 py-1.5 text-[11px] font-semibold text-[#434655] dark:text-slate-300 bg-white dark:bg-slate-800 border border-[#c3c6d7] dark:border-slate-700 rounded-lg"
+              >
+                Kembali Edit
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const next = pendingNextTarget;
+                  setHasEditedCalc(false);
+                  setPendingNextTarget(null);
+                  if (next.type === 'switch_item') {
+                    applyFocusCountingCard(next.item);
+                  } else if (next.type === 'open_scanner') {
+                    onOpenScanner();
+                  } else if (next.type === 'open_calc') {
+                    onOpenCalc(next.item);
+                  }
+                }}
+                className="px-2.5 py-1.5 text-[11px] font-semibold text-amber-900 dark:text-amber-200 bg-amber-200/80 dark:bg-amber-900/70 rounded-lg"
+              >
+                Lanjut Tanpa Simpan
+              </button>
+              <button
+                type="button"
+                disabled={isSavingActive}
+                onClick={async () => {
+                  const next = pendingNextTarget;
+                  const saved = await saveCurrentActiveOnly();
+                  if (saved) {
+                    if (next.type === 'switch_item') {
+                      applyFocusCountingCard(next.item);
+                    } else if (next.type === 'open_scanner') {
+                      onOpenScanner();
+                    } else if (next.type === 'open_calc') {
+                      onOpenCalc(next.item);
+                    }
+                  }
+                }}
+                className="px-3 py-1.5 text-[11px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg flex items-center gap-1"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>{isSavingActive ? 'Menyimpan...' : 'Simpan & Lanjut'}</span>
+              </button>
+            </div>
+          </div>
+        )}
 
         {isLoading ? (
           <div className="py-8 text-center text-xs text-[#434655] dark:text-slate-400">
@@ -714,7 +846,10 @@ export const MobileOpnameWorkspace: React.FC<MobileOpnameWorkspaceProps> = ({
                   <div className="flex items-center justify-between gap-1 bg-white dark:bg-slate-900 rounded-md p-1 shadow-xs">
                     <button
                       type="button"
-                      onClick={() => setJmlBox((v) => Math.max(0, v - 1))}
+                      onClick={() => {
+                        setHasEditedCalc(true);
+                        setJmlBox((v) => Math.max(0, v - 1));
+                      }}
                       className="w-8 h-9 rounded bg-[#eaedff] dark:bg-slate-800 hover:bg-[#dae2fd] dark:hover:bg-slate-700 flex items-center justify-center text-[#131b2e] dark:text-white active:scale-90 transition-transform shrink-0"
                       aria-label="Kurangi jumlah box"
                     >
@@ -724,12 +859,18 @@ export const MobileOpnameWorkspace: React.FC<MobileOpnameWorkspaceProps> = ({
                       type="number"
                       min="0"
                       value={jmlBox}
-                      onChange={(e) => setJmlBox(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                      onChange={(e) => {
+                        setHasEditedCalc(true);
+                        setJmlBox(Math.max(0, parseInt(e.target.value, 10) || 0));
+                      }}
                       className="w-full min-w-0 text-center bg-transparent font-mono font-extrabold text-sm text-[#131b2e] dark:text-white focus:outline-none tabular-nums"
                     />
                     <button
                       type="button"
-                      onClick={() => setJmlBox((v) => v + 1)}
+                      onClick={() => {
+                        setHasEditedCalc(true);
+                        setJmlBox((v) => v + 1);
+                      }}
                       className="w-8 h-9 rounded bg-[#eaedff] dark:bg-slate-800 hover:bg-[#dae2fd] dark:hover:bg-slate-700 flex items-center justify-center text-[#004ac6] dark:text-blue-400 active:scale-90 transition-transform shrink-0"
                       aria-label="Tambah jumlah box"
                     >
@@ -804,7 +945,10 @@ export const MobileOpnameWorkspace: React.FC<MobileOpnameWorkspaceProps> = ({
                   <div className="flex items-center justify-between gap-1 bg-white dark:bg-slate-900 rounded-md p-1 shadow-xs">
                     <button
                       type="button"
-                      onClick={() => setJmlPack((v) => Math.max(0, v - 1))}
+                      onClick={() => {
+                        setHasEditedCalc(true);
+                        setJmlPack((v) => Math.max(0, v - 1));
+                      }}
                       className="w-8 h-9 rounded bg-[#eaedff] dark:bg-slate-800 hover:bg-[#dae2fd] dark:hover:bg-slate-700 flex items-center justify-center text-[#131b2e] dark:text-white active:scale-90 transition-transform shrink-0"
                       aria-label="Kurangi jumlah renteng atau pack"
                     >
@@ -814,12 +958,18 @@ export const MobileOpnameWorkspace: React.FC<MobileOpnameWorkspaceProps> = ({
                       type="number"
                       min="0"
                       value={jmlPack}
-                      onChange={(e) => setJmlPack(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                      onChange={(e) => {
+                        setHasEditedCalc(true);
+                        setJmlPack(Math.max(0, parseInt(e.target.value, 10) || 0));
+                      }}
                       className="w-full min-w-0 text-center bg-transparent font-mono font-extrabold text-sm text-[#131b2e] dark:text-white focus:outline-none tabular-nums"
                     />
                     <button
                       type="button"
-                      onClick={() => setJmlPack((v) => v + 1)}
+                      onClick={() => {
+                        setHasEditedCalc(true);
+                        setJmlPack((v) => v + 1);
+                      }}
                       className="w-8 h-9 rounded bg-[#eaedff] dark:bg-slate-800 hover:bg-[#dae2fd] dark:hover:bg-slate-700 flex items-center justify-center text-[#004ac6] dark:text-blue-400 active:scale-90 transition-transform shrink-0"
                       aria-label="Tambah jumlah renteng atau pack"
                     >
@@ -893,7 +1043,10 @@ export const MobileOpnameWorkspace: React.FC<MobileOpnameWorkspaceProps> = ({
                 <div className="flex items-center justify-between gap-1 bg-white dark:bg-slate-900 rounded-md p-1 shadow-xs w-40 sm:w-48 shrink-0">
                   <button
                     type="button"
-                    onClick={() => setEcerLepas((v) => Math.max(0, v - 1))}
+                    onClick={() => {
+                      setHasEditedCalc(true);
+                      setEcerLepas((v) => Math.max(0, v - 1));
+                    }}
                     className="w-8 h-9 rounded bg-[#eaedff] dark:bg-slate-800 hover:bg-[#dae2fd] dark:hover:bg-slate-700 flex items-center justify-center text-[#131b2e] dark:text-white active:scale-90 transition-transform shrink-0"
                     aria-label="Kurangi eceran"
                   >
@@ -903,12 +1056,18 @@ export const MobileOpnameWorkspace: React.FC<MobileOpnameWorkspaceProps> = ({
                     type="number"
                     min="0"
                     value={ecerLepas}
-                    onChange={(e) => setEcerLepas(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                    onChange={(e) => {
+                      setHasEditedCalc(true);
+                      setEcerLepas(Math.max(0, parseInt(e.target.value, 10) || 0));
+                    }}
                     className="w-full min-w-0 text-center bg-transparent font-mono font-extrabold text-sm text-[#131b2e] dark:text-white focus:outline-none tabular-nums"
                   />
                   <button
                     type="button"
-                    onClick={() => setEcerLepas((v) => v + 1)}
+                    onClick={() => {
+                      setHasEditedCalc(true);
+                      setEcerLepas((v) => v + 1);
+                    }}
                     className="w-8 h-9 rounded bg-[#eaedff] dark:bg-slate-800 hover:bg-[#dae2fd] dark:hover:bg-slate-700 flex items-center justify-center text-[#004ac6] dark:text-blue-400 active:scale-90 transition-transform shrink-0"
                     aria-label="Tambah eceran"
                   >

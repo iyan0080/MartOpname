@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { InventoryItem, InventoryStats } from '../types/inventory.ts';
 import { formatRupiah, formatShortTime } from '../utils/excelUtils.ts';
+import { playScanWarningSound } from '../utils/soundEffects.ts';
 import { DesktopInventoryRow } from './InventoryRows.tsx';
 
 interface DuplicateAnalysisSummary {
@@ -140,9 +141,17 @@ export const DesktopOpnameWorkspace: React.FC<DesktopOpnameWorkspaceProps> = ({
   const [isiPerBox, setIsiPerBox] = useState<number>(24);
   const [ecerLepas, setEcerLepas] = useState<number>(0);
   const [isSavingActive, setIsSavingActive] = useState(false);
+  const [hasEditedCalc, setHasEditedCalc] = useState(false);
+  const [pendingNextTarget, setPendingNextTarget] = useState<
+    | { type: 'switch_item'; item: InventoryItem }
+    | { type: 'open_scanner' }
+    | null
+  >(null);
 
   // Sync box & loose pcs when activeItem changes
   useEffect(() => {
+    setHasEditedCalc(false);
+    setPendingNextTarget(null);
     if (activeItem) {
       setJmlBox(0);
       setIsiPerBox(getDefaultIsiPerBox(activeItem));
@@ -168,9 +177,14 @@ export const DesktopOpnameWorkspace: React.FC<DesktopOpnameWorkspaceProps> = ({
   const activeSystemQty = activeItem?.quantitySystem || 0;
   const activeDiff = totalCalculated - activeSystemQty;
   const activeSatuan = activeItem?.satuan || 'pcs';
+  const hasUnsavedCalc = Boolean(
+    activeItem &&
+      hasEditedCalc &&
+      (totalCalculated !== (activeItem.quantity || 0) || safeBox > 0)
+  );
 
-  const handleSaveAndNext = async () => {
-    if (!activeItem || isSavingActive) return;
+  const saveCurrentActiveOnly = async (): Promise<boolean> => {
+    if (!activeItem || isSavingActive) return false;
     setIsSavingActive(true);
     const note =
       safeBox > 0
@@ -179,7 +193,16 @@ export const DesktopOpnameWorkspace: React.FC<DesktopOpnameWorkspaceProps> = ({
 
     const ok = await onSaveCountingAdjust(activeItem.id, totalCalculated, note);
     setIsSavingActive(false);
+    if (ok) {
+      setHasEditedCalc(false);
+      setPendingNextTarget(null);
+    }
+    return ok;
+  };
 
+  const handleSaveAndNext = async () => {
+    if (!activeItem || isSavingActive) return;
+    const ok = await saveCurrentActiveOnly();
     if (ok) {
       const pool = filteredItems.length > 0 ? filteredItems : items;
       const currentIdx = pool.findIndex((i) => i.id === activeItem.id);
@@ -192,11 +215,22 @@ export const DesktopOpnameWorkspace: React.FC<DesktopOpnameWorkspaceProps> = ({
     }
   };
 
-  const selectItemIntoStation = (item: InventoryItem) => {
+  const applySelectItemIntoStation = (item: InventoryItem) => {
+    setHasEditedCalc(false);
+    setPendingNextTarget(null);
     onSelectCountingItem(item.id);
     setJmlBox(0);
     setIsiPerBox(getDefaultIsiPerBox(item));
     setEcerLepas(Math.max(0, item.quantity || 0));
+  };
+
+  const selectItemIntoStation = (item: InventoryItem) => {
+    if (activeItem && item.id !== activeItem.id && hasUnsavedCalc) {
+      playScanWarningSound();
+      setPendingNextTarget({ type: 'switch_item', item });
+      return;
+    }
+    applySelectItemIntoStation(item);
   };
 
   return (
@@ -239,7 +273,14 @@ export const DesktopOpnameWorkspace: React.FC<DesktopOpnameWorkspaceProps> = ({
               </button>
               <button
                 type="button"
-                onClick={onOpenScanner}
+                onClick={() => {
+                  if (hasUnsavedCalc) {
+                    playScanWarningSound();
+                    setPendingNextTarget({ type: 'open_scanner' });
+                    return;
+                  }
+                  onOpenScanner();
+                }}
                 className="h-8 px-2.5 bg-[#eaedff] dark:bg-slate-700 hover:bg-[#dae2fd] dark:hover:bg-slate-600 active:scale-95 text-[#131b2e] dark:text-white rounded-md flex items-center gap-1 text-[11px] font-bold transition-all"
                 title="Nyalakan Kamera Scanner Barcode & QR"
               >
@@ -355,16 +396,84 @@ export const DesktopOpnameWorkspace: React.FC<DesktopOpnameWorkspaceProps> = ({
         {/* 3. Touch Calculator: Box Dus & Eceran Rak */}
         <div className="shrink-0 bg-white dark:bg-slate-900 p-3.5 rounded-xl border border-[#c3c6d7]/40 dark:border-slate-800 shadow-xs flex flex-col gap-3">
           <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 flex-wrap">
               <Calculator className="w-4 h-4 text-[#004ac6] dark:text-blue-400" />
               <h3 className="text-xs font-bold text-[#131b2e] dark:text-white">
                 Kalkulator Fisik: Box Dus &amp; Eceran Rak
               </h3>
+              {hasUnsavedCalc && (
+                <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/70 text-amber-800 dark:text-amber-200 text-[10px] font-bold">
+                  Belum Disimpan
+                </span>
+              )}
             </div>
             <span className="text-[10px] font-semibold text-[#737686] dark:text-slate-400 uppercase">
               Pengisian Isi Per Dus
             </span>
           </div>
+
+          {activeItem && pendingNextTarget && (
+            <div className="p-3 bg-amber-50 dark:bg-amber-950/70 border border-amber-300 dark:border-amber-700 rounded-xl space-y-2">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-bold text-amber-950 dark:text-amber-100">
+                    Pemberitahuan: Jumlah Barang Belum Disimpan!
+                  </p>
+                  <p className="text-[11px] text-amber-800 dark:text-amber-200 mt-0.5 leading-relaxed">
+                    Input untuk <strong>{activeItem.namaBarang}</strong> ({totalCalculated} {activeSatuan}) belum disimpan.{' '}
+                    {pendingNextTarget.type === 'switch_item'
+                      ? `Simpan terlebih dahulu sebelum lanjut ke "${pendingNextTarget.item.namaBarang}"?`
+                      : 'Simpan terlebih dahulu sebelum membuka kamera scan?'}
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center justify-end gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setPendingNextTarget(null)}
+                  className="px-2.5 py-1 text-[11px] font-semibold text-[#434655] dark:text-slate-300 bg-white dark:bg-slate-800 border border-[#c3c6d7] dark:border-slate-700 rounded-lg cursor-pointer"
+                >
+                  Kembali Edit
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = pendingNextTarget;
+                    setHasEditedCalc(false);
+                    setPendingNextTarget(null);
+                    if (next.type === 'switch_item') {
+                      applySelectItemIntoStation(next.item);
+                    } else if (next.type === 'open_scanner') {
+                      onOpenScanner();
+                    }
+                  }}
+                  className="px-2.5 py-1 text-[11px] font-semibold text-amber-900 dark:text-amber-200 bg-amber-200/80 dark:bg-amber-900/70 rounded-lg cursor-pointer"
+                >
+                  Lanjut Tanpa Simpan
+                </button>
+                <button
+                  type="button"
+                  disabled={isSavingActive}
+                  onClick={async () => {
+                    const next = pendingNextTarget;
+                    const saved = await saveCurrentActiveOnly();
+                    if (saved) {
+                      if (next.type === 'switch_item') {
+                        applySelectItemIntoStation(next.item);
+                      } else if (next.type === 'open_scanner') {
+                        onOpenScanner();
+                      }
+                    }
+                  }}
+                  className="px-3 py-1 text-[11px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg flex items-center gap-1 cursor-pointer"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>{isSavingActive ? 'Menyimpan...' : 'Simpan & Lanjut'}</span>
+                </button>
+              </div>
+            </div>
+          )}
 
           {activeItem ? (
             <>
@@ -381,7 +490,10 @@ export const DesktopOpnameWorkspace: React.FC<DesktopOpnameWorkspaceProps> = ({
                   <div className="flex items-center justify-between gap-1">
                     <button
                       type="button"
-                      onClick={() => setJmlBox((v) => Math.max(0, v - 1))}
+                      onClick={() => {
+                        setHasEditedCalc(true);
+                        setJmlBox((v) => Math.max(0, v - 1));
+                      }}
                       className="w-8 h-10 bg-[#dae2fd] dark:bg-slate-700 hover:bg-[#d2d9f4] dark:hover:bg-slate-600 active:scale-90 text-[#131b2e] dark:text-white rounded-lg flex items-center justify-center transition-transform shrink-0"
                       aria-label="Kurangi jumlah dus"
                     >
@@ -391,12 +503,18 @@ export const DesktopOpnameWorkspace: React.FC<DesktopOpnameWorkspaceProps> = ({
                       type="number"
                       min="0"
                       value={jmlBox}
-                      onChange={(e) => setJmlBox(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                      onChange={(e) => {
+                        setHasEditedCalc(true);
+                        setJmlBox(Math.max(0, parseInt(e.target.value, 10) || 0));
+                      }}
                       className="w-full min-w-0 text-center bg-white dark:bg-slate-900 py-2 rounded-lg font-mono font-extrabold text-sm text-[#131b2e] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#004ac6] tabular-nums"
                     />
                     <button
                       type="button"
-                      onClick={() => setJmlBox((v) => v + 1)}
+                      onClick={() => {
+                        setHasEditedCalc(true);
+                        setJmlBox((v) => v + 1);
+                      }}
                       className="w-8 h-10 bg-[#dae2fd] dark:bg-slate-700 hover:bg-[#d2d9f4] dark:hover:bg-slate-600 active:scale-90 text-[#004ac6] dark:text-blue-400 rounded-lg flex items-center justify-center transition-transform shrink-0"
                       aria-label="Tambah jumlah dus"
                     >
@@ -416,7 +534,10 @@ export const DesktopOpnameWorkspace: React.FC<DesktopOpnameWorkspaceProps> = ({
                   <div className="flex items-center justify-between gap-1">
                     <button
                       type="button"
-                      onClick={() => setIsiPerBox((v) => Math.max(1, v - 1))}
+                      onClick={() => {
+                        setHasEditedCalc(true);
+                        setIsiPerBox((v) => Math.max(1, v - 1));
+                      }}
                       className="w-8 h-10 bg-[#dae2fd] dark:bg-slate-700 hover:bg-[#d2d9f4] dark:hover:bg-slate-600 active:scale-90 text-[#131b2e] dark:text-white rounded-lg flex items-center justify-center transition-transform shrink-0"
                       aria-label="Kurangi isi per box"
                     >
@@ -426,12 +547,18 @@ export const DesktopOpnameWorkspace: React.FC<DesktopOpnameWorkspaceProps> = ({
                       type="number"
                       min="1"
                       value={isiPerBox}
-                      onChange={(e) => setIsiPerBox(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                      onChange={(e) => {
+                        setHasEditedCalc(true);
+                        setIsiPerBox(Math.max(1, parseInt(e.target.value, 10) || 1));
+                      }}
                       className="w-full min-w-0 text-center bg-white dark:bg-slate-900 py-2 rounded-lg font-mono font-extrabold text-sm text-[#131b2e] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#004ac6] tabular-nums"
                     />
                     <button
                       type="button"
-                      onClick={() => setIsiPerBox((v) => v + 1)}
+                      onClick={() => {
+                        setHasEditedCalc(true);
+                        setIsiPerBox((v) => v + 1);
+                      }}
                       className="w-8 h-10 bg-[#dae2fd] dark:bg-slate-700 hover:bg-[#d2d9f4] dark:hover:bg-slate-600 active:scale-90 text-[#004ac6] dark:text-blue-400 rounded-lg flex items-center justify-center transition-transform shrink-0"
                       aria-label="Tambah isi per box"
                     >
@@ -451,7 +578,10 @@ export const DesktopOpnameWorkspace: React.FC<DesktopOpnameWorkspaceProps> = ({
                   <div className="flex items-center justify-between gap-1">
                     <button
                       type="button"
-                      onClick={() => setEcerLepas((v) => Math.max(0, v - 1))}
+                      onClick={() => {
+                        setHasEditedCalc(true);
+                        setEcerLepas((v) => Math.max(0, v - 1));
+                      }}
                       className="w-8 h-10 bg-[#dae2fd] dark:bg-slate-700 hover:bg-[#d2d9f4] dark:hover:bg-slate-600 active:scale-90 text-[#131b2e] dark:text-white rounded-lg flex items-center justify-center transition-transform shrink-0"
                       aria-label="Kurangi eceran"
                     >
@@ -461,12 +591,18 @@ export const DesktopOpnameWorkspace: React.FC<DesktopOpnameWorkspaceProps> = ({
                       type="number"
                       min="0"
                       value={ecerLepas}
-                      onChange={(e) => setEcerLepas(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                      onChange={(e) => {
+                        setHasEditedCalc(true);
+                        setEcerLepas(Math.max(0, parseInt(e.target.value, 10) || 0));
+                      }}
                       className="w-full min-w-0 text-center bg-white dark:bg-slate-900 py-2 rounded-lg font-mono font-extrabold text-sm text-[#131b2e] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#004ac6] tabular-nums"
                     />
                     <button
                       type="button"
-                      onClick={() => setEcerLepas((v) => v + 1)}
+                      onClick={() => {
+                        setHasEditedCalc(true);
+                        setEcerLepas((v) => v + 1);
+                      }}
                       className="w-8 h-10 bg-[#dae2fd] dark:bg-slate-700 hover:bg-[#d2d9f4] dark:hover:bg-slate-600 active:scale-90 text-[#004ac6] dark:text-blue-400 rounded-lg flex items-center justify-center transition-transform shrink-0"
                       aria-label="Tambah eceran"
                     >

@@ -18,7 +18,7 @@ import {
   Scan,
 } from 'lucide-react';
 import { playScanSuccessSound, playScanWarningSound } from '../utils/soundEffects.ts';
-import { extractScanCandidates } from '../utils/scanUtils.ts';
+import { extractScanCandidates, findItemsByScan } from '../utils/scanUtils.ts';
 import { InventoryItem } from '../types/inventory.ts';
 
 interface BarcodeScannerModalProps {
@@ -69,6 +69,15 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   const [pcsExtra, setPcsExtra] = useState<number | ''>('');
   const [manualCalcQty, setManualCalcQty] = useState<number | ''>('');
   const [isSavingQty, setIsSavingQty] = useState(false);
+  const [hasEditedCalc, setHasEditedCalc] = useState(false);
+
+  type PendingUnsavedAction =
+    | { type: 'next_code'; code: string; nextItemName?: string }
+    | { type: 'switch_increment' }
+    | { type: 'close' }
+    | { type: 'open_add' };
+
+  const [pendingUnsavedAction, setPendingUnsavedAction] = useState<PendingUnsavedAction | null>(null);
 
   const [lastScannedText, setLastScannedText] = useState<string | null>(null);
   const [lastScannedItem, setLastScannedItem] = useState<InventoryItem | null>(null);
@@ -95,6 +104,11 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   isOpenRef.current = isOpen;
   const isProcessingRef = useRef(false);
   const isSavingQtyRef = useRef(false);
+  const hasEditedCalcRef = useRef(false);
+  const pendingUnsavedActionRef = useRef<PendingUnsavedAction | null>(null);
+  pendingUnsavedActionRef.current = pendingUnsavedAction;
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
   const lastAnyScanTimeRef = useRef<number>(0);
   const lastScannedTimeRef = useRef<number>(0);
   const lastScannedTextRef = useRef<string | null>(null);
@@ -112,6 +126,11 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   const setActiveItemSync = (item: InventoryItem | null) => {
     activeItemRef.current = item;
     setActiveItem(item);
+  };
+
+  const setHasEditedCalcSync = (edited: boolean) => {
+    hasEditedCalcRef.current = edited;
+    setHasEditedCalc(edited);
   };
 
   const resetCooldownForNextScan = () => {
@@ -135,8 +154,21 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     return Math.max(0, total);
   }, [dusCount, isiPerDus, packCount, isiPerPack, pcsExtra, manualCalcQty]);
 
+  const hasUnsavedChanges = Boolean(
+    activeItem &&
+      hasEditedCalc &&
+      (calculatedTotal !== (activeItem.quantity || 0) ||
+        (typeof dusCount === 'number' && dusCount > 0) ||
+        (typeof packCount === 'number' && packCount > 0) ||
+        (typeof pcsExtra === 'number' && pcsExtra > 0))
+  );
+  const hasUnsavedChangesRef = useRef(hasUnsavedChanges);
+  hasUnsavedChangesRef.current = hasUnsavedChanges;
+
   // Reset states when item changes (prioritizing saved isiPerDus and isiPerPack)
   useEffect(() => {
+    setHasEditedCalcSync(false);
+    setPendingUnsavedAction(null);
     if (activeItem) {
       if (activeItem.isiPerDus && activeItem.isiPerDus > 0) {
         setIsiPerDus(Math.max(1, Math.round(activeItem.isiPerDus)));
@@ -268,7 +300,8 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
         inFlight ||
         ts - lastDetectTs < 45 ||
         isProcessingRef.current ||
-        isSavingQtyRef.current
+        isSavingQtyRef.current ||
+        pendingUnsavedActionRef.current !== null
       ) {
         return;
       }
@@ -318,6 +351,8 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
       resetCooldownForNextScan();
       setLastScannedItem(null);
       setActiveItemSync(null);
+      setHasEditedCalcSync(false);
+      setPendingUnsavedAction(null);
       setZoomRange(null);
       setZoomLevel(1);
       setHasTorch(false);
@@ -571,25 +606,47 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     }
   };
 
-  const handleBarcodeDetected = async (rawCode: string) => {
+  const handleBarcodeDetected = async (rawCode: string, bypassUnsavedCheck = false) => {
     const code = rawCode.trim();
     if (!code || isSavingQtyRef.current) return;
+    if (!bypassUnsavedCheck && pendingUnsavedActionRef.current !== null) return;
     const now = Date.now();
 
     // Prevent concurrent frame double-dispatch (180ms guard across dual native + ZXing decoders)
-    if (isProcessingRef.current || now - lastAnyScanTimeRef.current < 180) {
+    if (!bypassUnsavedCheck && (isProcessingRef.current || now - lastAnyScanTimeRef.current < 180)) {
       return;
     }
 
     // While inline calculator is open for the SAME barcode, ignore duplicate reads of that same code
     // so typed Dus/RTG/Pcs values aren't reset — while ALWAYS allowing a DIFFERENT next barcode immediately!
-    if (code === lastScannedTextRef.current) {
+    if (!bypassUnsavedCheck && code === lastScannedTextRef.current) {
       if (activeItemRef.current && scannerModeRef.current === 'calculator') {
         return;
       }
       if (now - lastScannedTimeRef.current < 900) {
         return;
       }
+    }
+
+    // Check if user entered quantity for activeItem and hasn't saved yet before continuing to next item
+    if (!bypassUnsavedCheck && activeItemRef.current && hasUnsavedChangesRef.current) {
+      const matchedNext = findItemsByScan(itemsRef.current, code)[0];
+      // Ignore if scanned code belongs to the exact same active item
+      if (matchedNext && matchedNext.id === activeItemRef.current.id) {
+        return;
+      }
+      playScanWarningSound();
+      if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+        try {
+          navigator.vibrate([40, 40, 40]);
+        } catch {}
+      }
+      setPendingUnsavedAction({
+        type: 'next_code',
+        code,
+        nextItemName: matchedNext?.namaBarang,
+      });
+      return;
     }
 
     isProcessingRef.current = true;
@@ -690,13 +747,39 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   const handleManualSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!manualCode.trim()) return;
-    resetCooldownForNextScan();
-    handleBarcodeDetected(manualCode.trim());
+    const trimmed = manualCode.trim();
+    if (!activeItemRef.current || !hasUnsavedChangesRef.current) {
+      resetCooldownForNextScan();
+    }
+    handleBarcodeDetected(trimmed);
     setManualCode('');
   };
 
-  const handleSaveCalculatedQuantity = async () => {
-    if (!activeItem || !onApplyCalculatedQty) return;
+  const runPendingUnsavedAction = async (action: PendingUnsavedAction) => {
+    setPendingUnsavedAction(null);
+    if (action.type === 'next_code') {
+      resetCooldownForNextScan();
+      await handleBarcodeDetected(action.code, true);
+    } else if (action.type === 'switch_increment') {
+      setScannerMode('increment');
+      setActiveItemSync(null);
+      setHasEditedCalcSync(false);
+      resetCooldownForNextScan();
+    } else if (action.type === 'open_add') {
+      setActiveItemSync(null);
+      setHasEditedCalcSync(false);
+      onOpenManualAdd('');
+      onClose();
+    } else if (action.type === 'close') {
+      setActiveItemSync(null);
+      setHasEditedCalcSync(false);
+      stopScanner();
+      onClose();
+    }
+  };
+
+  const handleSaveCalculatedQuantity = async (): Promise<boolean> => {
+    if (!activeItem || !onApplyCalculatedQty) return false;
     isSavingQtyRef.current = true;
     setIsSavingQty(true);
 
@@ -746,9 +829,12 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
         setLastScannedItem(updatedItem);
         setLastResultBadge('Tersimpan');
         setScanStatus('success');
+        setHasEditedCalcSync(false);
         setActiveItemSync(null);
         resetCooldownForNextScan();
+        return true;
       }
+      return false;
     } finally {
       isSavingQtyRef.current = false;
       setIsSavingQty(false);
@@ -792,6 +878,11 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
           </div>
           <button
             onClick={() => {
+              if (hasUnsavedChanges) {
+                playScanWarningSound();
+                setPendingUnsavedAction({ type: 'close' });
+                return;
+              }
               stopScanner();
               onClose();
             }}
@@ -1013,8 +1104,14 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
               <button
                 type="button"
                 onClick={() => {
+                  if (hasUnsavedChanges) {
+                    playScanWarningSound();
+                    setPendingUnsavedAction({ type: 'switch_increment' });
+                    return;
+                  }
                   setScannerMode('increment');
                   setActiveItemSync(null);
+                  setHasEditedCalcSync(false);
                   resetCooldownForNextScan();
                 }}
                 className={`px-2 py-1 text-xs font-medium rounded-md transition-colors ${
@@ -1032,10 +1129,71 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
 
         {/* Scrollable Body: Result / Inline Calculator */}
         <div className="overflow-y-auto flex-1 divide-y divide-slate-200 dark:divide-slate-800">
+          {/* Unsaved Quantity Input Notification Banner */}
+          {activeItem && pendingUnsavedAction && (
+            <div className="p-3.5 bg-amber-50 dark:bg-amber-950/70 border-b-2 border-amber-400 dark:border-amber-700 space-y-2.5 animate-pulse-once">
+              <div className="flex items-start gap-2.5">
+                <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                <div className="min-w-0 flex-1">
+                  <h4 className="text-xs sm:text-sm font-bold text-amber-950 dark:text-amber-100">
+                    Pemberitahuan: Jumlah Barang Belum Disimpan!
+                  </h4>
+                  <p className="text-xs text-amber-800 dark:text-amber-200 mt-0.5 leading-relaxed">
+                    Input untuk <strong>{activeItem.namaBarang}</strong> ({calculatedTotal} pcs) belum disimpan.{' '}
+                    {pendingUnsavedAction.type === 'next_code'
+                      ? `Simpan terlebih dahulu sebelum lanjut ke ${
+                          pendingUnsavedAction.nextItemName
+                            ? `"${pendingUnsavedAction.nextItemName}"`
+                            : `kode "${pendingUnsavedAction.code}"`
+                        }?`
+                      : pendingUnsavedAction.type === 'switch_increment'
+                      ? 'Simpan terlebih dahulu sebelum pindah ke mode Satuan (+1)?'
+                      : 'Simpan terlebih dahulu sebelum melanjutkan?'}
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center justify-end gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setPendingUnsavedAction(null)}
+                  className="px-2.5 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:bg-slate-100 rounded-lg cursor-pointer"
+                >
+                  Kembali Edit
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const act = pendingUnsavedAction;
+                    setHasEditedCalcSync(false);
+                    runPendingUnsavedAction(act);
+                  }}
+                  className="px-2.5 py-1.5 text-xs font-semibold text-amber-900 dark:text-amber-200 bg-amber-200/80 dark:bg-amber-900/70 hover:bg-amber-300 dark:hover:bg-amber-800 rounded-lg cursor-pointer"
+                >
+                  Lanjut Tanpa Simpan
+                </button>
+                <button
+                  type="button"
+                  disabled={isSavingQty}
+                  onClick={async () => {
+                    const act = pendingUnsavedAction;
+                    const saved = await handleSaveCalculatedQuantity();
+                    if (saved) {
+                      await runPendingUnsavedAction(act);
+                    }
+                  }}
+                  className="px-3 py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 rounded-lg flex items-center gap-1 shadow-xs cursor-pointer"
+                >
+                  <CheckCircle className="w-3.5 h-3.5" />
+                  <span>{isSavingQty ? 'Menyimpan...' : `Simpan (${calculatedTotal} pcs) & Lanjut`}</span>
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Active Inline Calculator View for Scanned Item */}
           {activeItem && (
             <div className="p-4 bg-blue-50/90 dark:bg-blue-950/40 border-b border-blue-200 dark:border-blue-800 space-y-3">
-              <div className="flex items-start justify-between">
+              <div className="flex items-start justify-between gap-2">
                 <div>
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <span className="text-[10px] font-mono font-bold bg-blue-200 dark:bg-blue-900 text-blue-900 dark:text-blue-200 px-1.5 py-0.5 rounded">
@@ -1047,6 +1205,11 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
                     {lastIsQrCode && (
                       <span className="text-[10px] bg-purple-200 dark:bg-purple-950 text-purple-900 dark:text-purple-300 px-1.5 py-0.5 rounded font-bold flex items-center gap-0.5">
                         <QrCode className="w-2.5 h-2.5" /> QR Code
+                      </span>
+                    )}
+                    {hasUnsavedChanges && (
+                      <span className="text-[10px] bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-200 px-1.5 py-0.5 rounded font-bold">
+                        Belum Disimpan
                       </span>
                     )}
                   </div>
@@ -1101,6 +1264,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
                       min="0"
                       value={dusCount}
                       onChange={(e) => {
+                        setHasEditedCalcSync(true);
                         setManualCalcQty('');
                         setDusCount(e.target.value === '' ? '' : Math.max(0, parseInt(e.target.value) || 0));
                       }}
@@ -1121,6 +1285,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
                       min="1"
                       value={isiPerDus}
                       onChange={(e) => {
+                        setHasEditedCalcSync(true);
                         setManualCalcQty('');
                         setIsiPerDus(e.target.value === '' ? '' : Math.max(1, parseInt(e.target.value) || 1));
                       }}
@@ -1141,6 +1306,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
                       min="0"
                       value={packCount}
                       onChange={(e) => {
+                        setHasEditedCalcSync(true);
                         setManualCalcQty('');
                         setPackCount(e.target.value === '' ? '' : Math.max(0, parseInt(e.target.value) || 0));
                       }}
@@ -1161,6 +1327,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
                       min="1"
                       value={isiPerPack}
                       onChange={(e) => {
+                        setHasEditedCalcSync(true);
                         setManualCalcQty('');
                         setIsiPerPack(e.target.value === '' ? '' : Math.max(1, parseInt(e.target.value) || 1));
                       }}
@@ -1178,6 +1345,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
                       min="0"
                       value={pcsExtra}
                       onChange={(e) => {
+                        setHasEditedCalcSync(true);
                         setManualCalcQty('');
                         setPcsExtra(e.target.value === '' ? '' : Math.max(0, parseInt(e.target.value) || 0));
                       }}
@@ -1192,6 +1360,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
                   <button
                     type="button"
                     onClick={() => {
+                      setHasEditedCalcSync(true);
                       setManualCalcQty('');
                       setPcsExtra((prev) => (typeof prev === 'number' ? prev + 1 : 1));
                     }}
@@ -1202,6 +1371,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
                   <button
                     type="button"
                     onClick={() => {
+                      setHasEditedCalcSync(true);
                       setDusCount('');
                       setPackCount('');
                       setPcsExtra('');
@@ -1233,6 +1403,8 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
                     <button
                       type="button"
                       onClick={() => {
+                        setHasEditedCalcSync(false);
+                        setPendingUnsavedAction(null);
                         setActiveItemSync(null);
                         setScanStatus('idle');
                         resetCooldownForNextScan();
@@ -1380,6 +1552,11 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
             <button
               type="button"
               onClick={() => {
+                if (hasUnsavedChanges) {
+                  playScanWarningSound();
+                  setPendingUnsavedAction({ type: 'open_add' });
+                  return;
+                }
                 onOpenManualAdd('');
                 onClose();
               }}
