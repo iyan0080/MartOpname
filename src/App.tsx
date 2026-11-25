@@ -1198,7 +1198,8 @@ export default function App() {
         pendingIsiPackMapRef.current.delete(itemId);
       }
 
-      const target = items.find((i) => i.id === itemId);
+      const latestItems = itemsRef.current;
+      const target = latestItems.find((i) => i.id === itemId);
       if (!target) return false;
 
       const resolvedIsiPerDus =
@@ -1222,8 +1223,10 @@ export default function App() {
         keterangan: notes || target.keterangan,
       };
 
-      // Instant Optimistic Update
-      setItems((prev) => prev.map((i) => (i.id === itemId ? updatedItem : i)));
+      // Instant Optimistic Update (syncs itemsRef immediately for consecutive scans)
+      const nextItems = latestItems.map((i) => (i.id === itemId ? updatedItem : i));
+      itemsRef.current = nextItems;
+      setItems(nextItems);
       if (soundEnabled) playScanSuccessSound();
 
       const log: ScanAuditLog = {
@@ -1242,9 +1245,15 @@ export default function App() {
       };
 
       markCloudSaving();
-      await saveItemToFirestore(updatedItem);
-      await saveLogToFirestore(log);
-      markCloudSynced();
+      Promise.all([saveItemToFirestore(updatedItem), saveLogToFirestore(log)])
+        .then(() => {
+          markCloudSynced();
+        })
+        .catch((err) => {
+          console.error('Error quick adjust:', err);
+          setCloudSyncStatus('error');
+        });
+
       showToast(`Stok fisik ${target.namaBarang} diset ke ${newQuantity} pcs.`, 'success');
       return true;
     } catch (err) {

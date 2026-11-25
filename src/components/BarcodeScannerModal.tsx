@@ -72,6 +72,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
 
   const [lastScannedText, setLastScannedText] = useState<string | null>(null);
   const [lastScannedItem, setLastScannedItem] = useState<InventoryItem | null>(null);
+  const [lastResultBadge, setLastResultBadge] = useState<'+1 Terhitung' | 'Tersimpan'>('+1 Terhitung');
   const [lastIsQrCode, setLastIsQrCode] = useState(false);
   const [scanStatus, setScanStatus] = useState<'idle' | 'success' | 'not_found'>('idle');
   const [manualCode, setManualCode] = useState('');
@@ -89,9 +90,12 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const isStartingRef = useRef(false);
+  const scanSessionIdRef = useRef(0);
   const isOpenRef = useRef(isOpen);
   isOpenRef.current = isOpen;
   const isProcessingRef = useRef(false);
+  const isSavingQtyRef = useRef(false);
+  const lastAnyScanTimeRef = useRef<number>(0);
   const lastScannedTimeRef = useRef<number>(0);
   const lastScannedTextRef = useRef<string | null>(null);
   const scannerModeRef = useRef(scannerMode);
@@ -104,6 +108,18 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   onScanResultRef.current = onScanResult;
   const nativeRafRef = useRef<number | null>(null);
   const containerId = 'interactive-barcode-scanner';
+
+  const setActiveItemSync = (item: InventoryItem | null) => {
+    activeItemRef.current = item;
+    setActiveItem(item);
+  };
+
+  const resetCooldownForNextScan = () => {
+    lastScannedTextRef.current = null;
+    lastScannedTimeRef.current = 0;
+    lastAnyScanTimeRef.current = 0;
+    isProcessingRef.current = false;
+  };
 
   // Calculate live inline total
   const calculatedTotal = React.useMemo(() => {
@@ -252,35 +268,42 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
         inFlight ||
         ts - lastDetectTs < 45 ||
         isProcessingRef.current ||
-        (activeItemRef.current && scannerModeRef.current === 'calculator')
+        isSavingQtyRef.current
       ) {
         return;
       }
 
       const container = document.getElementById(containerId);
       const videoEl = container?.querySelector('video') as HTMLVideoElement | null;
-      if (!videoEl || videoEl.readyState < 2 || videoEl.videoWidth === 0 || videoEl.paused) {
+      if (!videoEl || videoEl.readyState < 2 || videoEl.videoWidth === 0) {
+        return;
+      }
+      if (videoEl.paused) {
+        videoEl.play().catch(() => {});
         return;
       }
 
       lastDetectTs = ts;
       inFlight = true;
-      detector
-        .detect(videoEl)
-        .then((barcodes: Array<{ rawValue?: string }>) => {
-          if (barcodes && barcodes.length > 0) {
-            const first = barcodes.find((b) => b.rawValue && b.rawValue.trim().length > 0);
-            if (first?.rawValue) {
-              handleBarcodeDetected(first.rawValue);
+      try {
+        Promise.resolve(detector.detect(videoEl))
+          .then((barcodes: Array<{ rawValue?: string }>) => {
+            if (barcodes && barcodes.length > 0) {
+              const first = barcodes.find((b) => b.rawValue && b.rawValue.trim().length > 0);
+              if (first?.rawValue) {
+                handleBarcodeDetected(first.rawValue);
+              }
             }
-          }
-        })
-        .catch(() => {
-          // Ignore transient frame decode errors
-        })
-        .finally(() => {
-          inFlight = false;
-        });
+          })
+          .catch(() => {
+            // Ignore transient frame decode errors
+          })
+          .finally(() => {
+            inFlight = false;
+          });
+      } catch {
+        inFlight = false;
+      }
     };
 
     nativeRafRef.current = requestAnimationFrame(tick);
@@ -292,15 +315,16 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
       stopScanner();
       setScanStatus('idle');
       setLastScannedText(null);
-      lastScannedTextRef.current = null;
+      resetCooldownForNextScan();
       setLastScannedItem(null);
-      setActiveItem(null);
+      setActiveItemSync(null);
       setZoomRange(null);
       setZoomLevel(1);
       setHasTorch(false);
       return;
     }
 
+    resetCooldownForNextScan();
     if (typeof navigator !== 'undefined' && navigator.mediaDevices) {
       startScanner(selectedCameraId || undefined);
     } else {
@@ -313,9 +337,10 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   }, [isOpen]);
 
   const startScanner = async (explicitCameraId?: string) => {
-    if (isStartingRef.current) return;
     const container = document.getElementById(containerId);
     if (!container) return;
+
+    const sessionId = ++scanSessionIdRef.current;
 
     try {
       isStartingRef.current = true;
@@ -325,8 +350,10 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
       setZoomLevel(1);
 
       if (scannerRef.current) {
-        await stopScanner();
+        await stopScanner(false);
       }
+
+      if (sessionId !== scanSessionIdRef.current || !isOpenRef.current) return;
 
       // Explicitly register QR Code and all 1D barcode formats + enable native BarcodeDetector
       const html5QrCode = new Html5Qrcode(containerId, {
@@ -374,7 +401,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
       };
 
       const onDecoded = (decodedText: string) => {
-        if (activeItemRef.current && scannerModeRef.current === 'calculator') return;
+        if (isSavingQtyRef.current) return;
         handleBarcodeDetected(decodedText);
       };
 
@@ -399,15 +426,17 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
         void primaryErr;
       }
 
-      // If modal closed while camera was initializing, tear it down immediately
-      if (!isOpenRef.current) {
+      // If modal closed or superseded by a newer startScanner session, tear down cleanly
+      if (sessionId !== scanSessionIdRef.current || !isOpenRef.current) {
         try {
           if (html5QrCode.isScanning) {
             await html5QrCode.stop();
           }
           html5QrCode.clear();
         } catch {}
-        scannerRef.current = null;
+        if (scannerRef.current === html5QrCode) {
+          scannerRef.current = null;
+        }
         return;
       }
 
@@ -449,15 +478,22 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
       // Launch parallel full-resolution native BarcodeDetector fast path
       startNativeDetectorLoop();
     } catch (err: any) {
-      console.warn('Failed to start scanner:', err);
-      setCameraError(err?.message || 'Gagal mengakses kamera. Pastikan izin kamera aktif.');
-      setIsScanning(false);
+      if (sessionId === scanSessionIdRef.current && isOpenRef.current) {
+        console.warn('Failed to start scanner:', err);
+        setCameraError(err?.message || 'Gagal mengakses kamera. Pastikan izin kamera aktif.');
+        setIsScanning(false);
+      }
     } finally {
-      isStartingRef.current = false;
+      if (sessionId === scanSessionIdRef.current) {
+        isStartingRef.current = false;
+      }
     }
   };
 
-  const stopScanner = async () => {
+  const stopScanner = async (bumpSession = true) => {
+    if (bumpSession) {
+      scanSessionIdRef.current += 1;
+    }
     stopNativeDetectorLoop();
     if (scannerRef.current) {
       const scanner = scannerRef.current;
@@ -537,18 +573,27 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
 
   const handleBarcodeDetected = async (rawCode: string) => {
     const code = rawCode.trim();
-    if (!code) return;
+    if (!code || isSavingQtyRef.current) return;
     const now = Date.now();
 
-    // Prevent duplicate triggers of the SAME code within 900ms, while allowing instant scan of a DIFFERENT item
-    if (
-      isProcessingRef.current ||
-      (code === lastScannedTextRef.current && now - lastScannedTimeRef.current < 900)
-    ) {
+    // Prevent concurrent frame double-dispatch (180ms guard across dual native + ZXing decoders)
+    if (isProcessingRef.current || now - lastAnyScanTimeRef.current < 180) {
       return;
     }
 
+    // While inline calculator is open for the SAME barcode, ignore duplicate reads of that same code
+    // so typed Dus/RTG/Pcs values aren't reset — while ALWAYS allowing a DIFFERENT next barcode immediately!
+    if (code === lastScannedTextRef.current) {
+      if (activeItemRef.current && scannerModeRef.current === 'calculator') {
+        return;
+      }
+      if (now - lastScannedTimeRef.current < 900) {
+        return;
+      }
+    }
+
     isProcessingRef.current = true;
+    lastAnyScanTimeRef.current = now;
     lastScannedTimeRef.current = now;
     lastScannedTextRef.current = code;
     setLastScannedText(code);
@@ -579,24 +624,24 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
         setLastScannedItem(result.item);
 
         if (scannerModeRef.current === 'calculator') {
-          setActiveItem(result.item);
+          setActiveItemSync(result.item);
         } else {
-          setActiveItem(null);
+          setLastResultBadge('+1 Terhitung');
+          setActiveItemSync(null);
         }
       } else {
         playScanWarningSound();
         setScanStatus('not_found');
         setLastScannedItem(null);
-        setActiveItem(null);
+        setActiveItemSync(null);
       }
     } catch {
       playScanWarningSound();
       setScanStatus('not_found');
-      setActiveItem(null);
+      setLastScannedItem(null);
+      setActiveItemSync(null);
     } finally {
-      setTimeout(() => {
-        isProcessingRef.current = false;
-      }, 250);
+      isProcessingRef.current = false;
     }
   };
 
@@ -606,6 +651,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     if (!file) return;
 
     setIsProcessingFile(true);
+    let fileScanner: Html5Qrcode | null = null;
     try {
       const tempId = 'file-scan-temp-elem';
       let tempDiv = document.getElementById(tempId);
@@ -616,23 +662,26 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
         document.body.appendChild(tempDiv);
       }
 
-      const fileScanner = new Html5Qrcode(tempId, false);
-      const result = await fileScanner.scanFile(file, true);
-      try {
-        await fileScanner.clear();
-      } catch {}
+      fileScanner = new Html5Qrcode(tempId, false);
+      const result = await fileScanner.scanFile(file, false);
 
       if (result) {
-        handleBarcodeDetected(result);
+        resetCooldownForNextScan();
+        await handleBarcodeDetected(result);
       }
     } catch (err: any) {
       console.warn('File scan error:', err);
       setScanStatus('not_found');
       setLastScannedText('Gambar tidak terdeteksi');
-      lastScannedTextRef.current = null;
+      resetCooldownForNextScan();
       setLastIsQrCode(true);
       playScanWarningSound();
     } finally {
+      if (fileScanner) {
+        try {
+          await fileScanner.clear();
+        } catch {}
+      }
       setIsProcessingFile(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
@@ -641,12 +690,14 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   const handleManualSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!manualCode.trim()) return;
+    resetCooldownForNextScan();
     handleBarcodeDetected(manualCode.trim());
     setManualCode('');
   };
 
   const handleSaveCalculatedQuantity = async () => {
     if (!activeItem || !onApplyCalculatedQty) return;
+    isSavingQtyRef.current = true;
     setIsSavingQty(true);
 
     const validIsiPerDus =
@@ -675,27 +726,32 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
         ? `Kalkulator: ${parts.join(' + ')} = ${calculatedTotal} pcs`
         : `Kalkulator: ${calculatedTotal} pcs`;
 
-    const success = await onApplyCalculatedQty(
-      activeItem.id,
-      calculatedTotal,
-      note,
-      validIsiPerDus,
-      validIsiPerPack
-    );
-    setIsSavingQty(false);
+    try {
+      const success = await onApplyCalculatedQty(
+        activeItem.id,
+        calculatedTotal,
+        note,
+        validIsiPerDus,
+        validIsiPerPack
+      );
 
-    if (success) {
-      playScanSuccessSound();
-      setActiveItem({
-        ...activeItem,
-        quantity: calculatedTotal,
-        ...(validIsiPerDus ? { isiPerDus: validIsiPerDus } : {}),
-        ...(validIsiPerPack ? { isiPerPack: validIsiPerPack } : {}),
-      });
-      setScanStatus('success');
-      setTimeout(() => {
-        setActiveItem(null);
-      }, 450);
+      if (success) {
+        const updatedItem: InventoryItem = {
+          ...activeItem,
+          quantity: calculatedTotal,
+          ...(validIsiPerDus ? { isiPerDus: validIsiPerDus } : {}),
+          ...(validIsiPerPack ? { isiPerPack: validIsiPerPack } : {}),
+        };
+        playScanSuccessSound();
+        setLastScannedItem(updatedItem);
+        setLastResultBadge('Tersimpan');
+        setScanStatus('success');
+        setActiveItemSync(null);
+        resetCooldownForNextScan();
+      }
+    } finally {
+      isSavingQtyRef.current = false;
+      setIsSavingQty(false);
     }
   };
 
@@ -941,7 +997,10 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
             <div className="flex items-center gap-1 bg-black/70 backdrop-blur-md p-0.5 rounded-lg border border-white/10">
               <button
                 type="button"
-                onClick={() => setScannerMode('calculator')}
+                onClick={() => {
+                  setScannerMode('calculator');
+                  resetCooldownForNextScan();
+                }}
                 className={`px-2.5 py-1 text-xs font-semibold rounded-md flex items-center gap-1.5 transition-colors ${
                   scannerMode === 'calculator'
                     ? 'bg-blue-600 text-white shadow-xs'
@@ -953,7 +1012,11 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
               </button>
               <button
                 type="button"
-                onClick={() => setScannerMode('increment')}
+                onClick={() => {
+                  setScannerMode('increment');
+                  setActiveItemSync(null);
+                  resetCooldownForNextScan();
+                }}
                 className={`px-2 py-1 text-xs font-medium rounded-md transition-colors ${
                   scannerMode === 'increment'
                     ? 'bg-slate-700 text-white shadow-xs'
@@ -1169,7 +1232,11 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
                   <div className="flex items-center gap-1.5">
                     <button
                       type="button"
-                      onClick={() => setActiveItem(null)}
+                      onClick={() => {
+                        setActiveItemSync(null);
+                        setScanStatus('idle');
+                        resetCooldownForNextScan();
+                      }}
                       className="px-2.5 py-1.5 text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer"
                     >
                       Batal
@@ -1199,7 +1266,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
               }`}
             >
               {scanStatus === 'success' && lastScannedItem ? (
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
                   <div className="flex items-center gap-2.5">
                     <CheckCircle className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
                     <div>
@@ -1224,13 +1291,13 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
                   <div className="flex items-center gap-1.5">
                     <button
                       type="button"
-                      onClick={() => setActiveItem(lastScannedItem)}
+                      onClick={() => setActiveItemSync(lastScannedItem)}
                       className="px-2.5 py-1 text-xs font-semibold bg-emerald-700 text-white hover:bg-emerald-800 rounded-md flex items-center gap-1 shadow-xs cursor-pointer"
                     >
                       <Calculator className="w-3.5 h-3.5" /> Hitung Kuantitas
                     </button>
                     <span className="text-xs bg-emerald-200/80 dark:bg-emerald-800 text-emerald-900 dark:text-emerald-100 px-2 py-0.5 rounded font-mono font-semibold">
-                      +1 Terhitung
+                      {lastResultBadge}
                     </span>
                   </div>
                 </div>
