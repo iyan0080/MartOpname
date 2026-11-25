@@ -90,3 +90,33 @@
 .dark ::-webkit-scrollbar-thumb:hover {
   background: #475569;
 }
+
+/* Barcode & QR Scanner crisp full-bleed camera feed */
+#interactive-barcode-scanner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+#interactive-barcode-scanner video {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  display: block;
+}
+
+@keyframes scan-laser-sweep {
+  0%, 100% {
+    transform: translateY(-38px);
+    opacity: 0.75;
+  }
+  50% {
+    transform: translateY(38px);
+    opacity: 1;
+  }
+}
+
+.animate-scan-laser {
+  animation: scan-laser-sweep 1.8s ease-in-out infinite;
+}
+

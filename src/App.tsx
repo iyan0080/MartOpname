@@ -691,7 +691,8 @@ export default function App() {
     const code = barcode.trim();
     if (!code) return { success: false };
 
-    const matching = findItemsByScan(items, code);
+    const latestItems = itemsRef.current;
+    const matching = findItemsByScan(latestItems, code);
     const local = matching[0];
 
     if (matching.length > 1) {
@@ -717,8 +718,10 @@ export default function App() {
         updatedAt: now,
       };
 
-      // 1. Instant Optimistic UI Update (0ms response)
-      setItems((prevItems) => prevItems.map((i) => (i.id === local.id ? updatedItem : i)));
+      // 1. Instant Optimistic UI Update (0ms response, updates itemsRef immediately too)
+      const nextItems = latestItems.map((i) => (i.id === local.id ? updatedItem : i));
+      itemsRef.current = nextItems;
+      setItems(nextItems);
       setActiveCountingItemId(local.id);
       if (soundEnabled) playScanSuccessSound();
       showToast(`+1 ${local.namaBarang} (Total: ${newQty} pcs)`, 'success');
@@ -737,16 +740,19 @@ export default function App() {
         notes: local.keterangan,
         timestamp: now,
       };
-      try {
-        markCloudSaving();
-        await saveItemToFirestore(updatedItem);
-        await saveLogToFirestore(log);
-        markCloudSynced();
-        return { success: true, item: updatedItem };
-      } catch {
-        setCloudSyncStatus('error');
-        return { success: false };
-      }
+
+      // Fire Cloud persistence in background so scanner stays 100% responsive for rapid scans
+      markCloudSaving();
+      Promise.all([saveItemToFirestore(updatedItem), saveLogToFirestore(log)])
+        .then(() => {
+          markCloudSynced();
+        })
+        .catch((err) => {
+          console.error('Camera increment save error:', err);
+          setCloudSyncStatus('error');
+        });
+
+      return { success: true, item: updatedItem };
     } else {
       return { success: false, notFound: true };
     }
